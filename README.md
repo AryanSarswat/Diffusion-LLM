@@ -157,7 +157,7 @@ You can override any of them with flags, eg, `--n_diffusion_steps 100`.
 2. Plan using your newly-trained models with the same command as in the pretrained planning section, simply replacing the logbase to point to your new models:
 ```
 #Using Loss function for guidance
-python scripts/plan_unguided.py --dataset drawer-close-v2  --diffusion_loadpath /home/kurt/HRI/diffuser/logs/drawer-close-v2/diffusion/metaworld_H8_T20 --horizon 8
+python scripts/plan_guided_lfn.py  --dataset drawer-close-v2 --diffusion_loadpath /home/kurt/HRI/diffuser/logs/drawer-close-v2/diffusion/metaworld_H8_T20 --horizon 8 --descending False
 #Without any guidance
 python scripts/plan_unguided.py --dataset drawer-close-v2  --diffusion_loadpath /home/kurt/HRI/diffuser/logs/drawer-close-v2/diffusion/metaworld_H8_T20 --horizon 8
 ```
