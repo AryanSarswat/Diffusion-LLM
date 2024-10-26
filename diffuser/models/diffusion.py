@@ -29,8 +29,8 @@ def default_sample_fn(model, x, cond, t):
     return model_mean + model_std * noise, values
 
 
-def sort_by_values(x, values):
-    inds = torch.argsort(values, descending=True)
+def sort_by_values(x, values,descending=True):
+    inds = torch.argsort(values, descending=descending)
     x = x[inds]
     values = values[inds]
     return x, values
@@ -156,7 +156,7 @@ class GaussianDiffusion(nn.Module):
         return model_mean, posterior_variance, posterior_log_variance
 
     @torch.no_grad()
-    def p_sample_loop(self, shape, cond, verbose=True, return_chain=False, sample_fn=default_sample_fn, **sample_kwargs):
+    def p_sample_loop(self, shape, cond, verbose=True, return_chain=False, sample_fn=default_sample_fn,descending=True, **sample_kwargs):
         device = self.betas.device
 
         batch_size = shape[0]
@@ -176,7 +176,7 @@ class GaussianDiffusion(nn.Module):
 
         progress.stamp()
 
-        x, values = sort_by_values(x, values)
+        x, values = sort_by_values(x, values,descending)
         if return_chain: chain = torch.stack(chain, dim=1)
         return Sample(x, values, chain)
 

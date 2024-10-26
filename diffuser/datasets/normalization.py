@@ -129,10 +129,22 @@ class GaussianNormalizer(Normalizer):
         normalizes to zero mean and unit variance
     '''
 
-    def __init__(self, *args, **kwargs):
+    """ def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.means = self.X.mean(axis=0)
         self.stds = self.X.std(axis=0)
+        self.z = 1 """
+
+    def __init__(self, *args, eps=1e-8, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.means = self.X.mean(axis=0)
+        self.stds = self.X.std(axis=0)
+        # Handle zero standard deviations
+        zero_stds = self.stds < eps
+        if np.any(zero_stds):
+            print(f'[ GaussianNormalizer ] Zero std detected in dimensions: {np.where(zero_stds)[0]}')
+            # Set zero stds to 1 to avoid division by zero
+            self.stds[zero_stds] = 1.0
         self.z = 1
 
     def __repr__(self):

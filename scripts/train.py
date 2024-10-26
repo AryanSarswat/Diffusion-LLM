@@ -34,6 +34,8 @@ render_config = utils.Config(
 )
 
 dataset = dataset_config()
+print(dataset)
+pr
 renderer = render_config()
 
 observation_dim = dataset.observation_dim

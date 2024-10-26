@@ -9,6 +9,55 @@ from diffuser.datasets.preprocessing import get_policy_preprocess_fn
 
 Trajectories = namedtuple('Trajectories', 'actions observations values')
 
+class UnguidedPolicy:
+    """
+    A policy that uses the diffusion model without any guidance.
+    """
+    def __init__(self, diffusion_model, normalizer, preprocess_fns, **sample_kwargs):
+        self.diffusion_model = diffusion_model
+        self.normalizer = normalizer
+        self.action_dim = diffusion_model.action_dim
+        self.preprocess_fn = get_policy_preprocess_fn(preprocess_fns)
+        self.sample_kwargs = sample_kwargs
+
+    def __call__(self, conditions, batch_size=1, verbose=True):
+        # Preprocess and format conditions
+        conditions = {k: self.preprocess_fn(v) for k, v in conditions.items()}
+        conditions = self._format_conditions(conditions, batch_size)
+
+        # Sample trajectories using the diffusion model without guidance
+        samples = self.diffusion_model.conditional_sample(conditions, horizon=self.diffusion_model.horizon, **self.sample_kwargs)
+        trajectories = utils.to_np(samples.trajectories)
+
+        # Extract actions and observations
+        actions = trajectories[:, :, :self.action_dim]
+        actions = self.normalizer.unnormalize(actions, 'actions')
+
+        observations = trajectories[:, :, self.action_dim:]
+        observations = self.normalizer.unnormalize(observations, 'observations')
+
+        # Create Trajectories namedtuple
+        trajectories = Trajectories(actions, observations, samples.values)
+        return actions[0, 0], trajectories  # Return the first action and the full trajectory
+
+    @property
+    def device(self):
+        parameters = list(self.diffusion_model.parameters())
+        return parameters[0].device
+
+    def _format_conditions(self, conditions, batch_size):
+        conditions = utils.apply_dict(
+            self.normalizer.normalize,
+            conditions,
+            'observations',
+        )
+        conditions = utils.to_torch(conditions, dtype=torch.float32, device=self.device)
+        conditions = utils.apply_dict(
+            einops.repeat,
+            conditions,
+            'd -> repeat d', repeat=batch_size,
+        )
+        return conditions
 
 class GuidedPolicy:
 
