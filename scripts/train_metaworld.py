@@ -20,7 +20,7 @@ dataset_config = utils.Config(
     'datasets.MetaworldSequenceDataset',  # Use the custom dataset class
     savepath=(args.savepath, 'dataset_config.pkl'),
     env=args.dataset,
-    data_path='/home/kurt/HRI/diffuser/metaworld_drawer_close_data2.pkl',  # Path to your collected data
+    data_path=args.data_path,  # Path to your collected data
     horizon=args.horizon,
     normalizer=args.normalizer,
     preprocess_fns=args.preprocess_fns,

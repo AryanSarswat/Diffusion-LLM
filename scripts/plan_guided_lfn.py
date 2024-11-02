@@ -45,7 +45,7 @@ def predefined_loss_fn(x, obs_dim):
     mean_speeds = torch.mean(speeds, dim=1)
 
     # Define loss as negative mean speed: shape [batch_size]
-    loss_per_trajectory = - mean_speeds
+    loss_per_trajectory = mean_speeds
 
     return loss_per_trajectory  # Shape: [batch_size]
 
@@ -54,8 +54,8 @@ def _loss_fn (x, obs_dim ):
 
     # Compute the speed (norm of each action vector): shape [batch_size, horizon]
     speeds = torch.linalg.norm(actions, dim=-1)
-    max_speed = 0.4
-    min_speed = 0.38
+    max_speed = 1.7
+    min_speed = 1.4
 
     # Penalize speeds outside the [min_speed, max_speed] range
     speed_loss = torch.maximum(speeds - max_speed, torch.tensor(0.0)) + \
@@ -67,7 +67,7 @@ def _loss_fn (x, obs_dim ):
     return loss_per_trajectory  # Shape: [batch_size]
 
 ## Initialize custom guide with your loss function
-guide = CustomGuide(loss_fn=_loss_fn, model=diffusion)
+guide = CustomGuide(loss_fn=predefined_loss_fn, model=diffusion)
 
 logger_config = utils.Config(
     utils.Logger,
@@ -112,6 +112,7 @@ rollout = [observation.copy()]
 total_reward = 0
 frames = []
 speed_list = []
+done=False
 for t in range(args.max_episode_length):
 
     if t % 10 == 0: print(args.savepath, flush=True)
@@ -125,7 +126,9 @@ for t in range(args.max_episode_length):
     action, samples = policy(conditions, batch_size=args.batch_size, verbose=args.verbose)
     
     ## Execute action in environment
-    next_observation, reward, terminal, _ = env.step(action)
+    next_observation, reward, terminal, info = env.step(action)
+
+    done = int(info.get('success', False)) == 1
 
     action = torch.tensor(action) if isinstance(action, np.ndarray) else action
     speed = torch.linalg.norm(action).item()
@@ -150,16 +153,16 @@ for t in range(args.max_episode_length):
     ## Render every `args.vis_freq` steps
     #logger.log(t, samples, state, rollout)
 
-    if terminal:
+    if done:
         break
 
     observation = next_observation
 
 if args.render_videos:
-    video_file = os.path.join("videos", f'trajectory_guided_{args.horizon}.mp4')
+    video_file = os.path.join("videos", f'trajectory_guided_slower_{args.dataset}_{args.horizon}_uniform.mp4')
     imageio.mimwrite(video_file, frames, fps=30)
     print(f"Saved video to {video_file}")
-    text_file = os.path.join("videos", f'speed_guided_{args.horizon}.txt')
+    text_file = os.path.join("videos", f'speed_guided_slower_{args.dataset}_{args.horizon}_uniform.txt')
     try:
         with open(text_file, 'w') as f:
             for step, speed in enumerate(speed_list):

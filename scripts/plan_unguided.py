@@ -4,6 +4,8 @@ import diffuser.sampling as sampling
 import diffuser.utils as utils
 import imageio
 import os
+import torch
+import numpy as np
 
 #-----------------------------------------------------------------------------#
 #----------------------------------- setup -----------------------------------#
@@ -64,6 +66,7 @@ rollout = [observation.copy()]
 
 total_reward = 0
 frames = []
+speed_list = []
 for t in range(args.max_episode_length):
 
     if t % 10 == 0: print(args.savepath, flush=True)
@@ -76,7 +79,14 @@ for t in range(args.max_episode_length):
     action, samples = policy(conditions, batch_size=args.batch_size, verbose=args.verbose)
 
     ## execute action in environment
-    next_observation, reward, terminal, _ = env.step(action)
+    next_observation, reward, terminal, info = env.step(action)
+
+    done = int(info.get('success', False)) == 1
+
+    action = torch.tensor(action) if isinstance(action, np.ndarray) else action
+    speed = torch.linalg.norm(action).item()
+
+    speed_list.append(speed)
 
     ## print reward and score
     total_reward += reward
@@ -97,15 +107,23 @@ for t in range(args.max_episode_length):
     ## render every `args.vis_freq` steps
     #logger.log(t, samples, state, rollout)
 
-    if terminal:
+    if done:
         break
 
     observation = next_observation
     
 if args.render_videos:
-    video_file = os.path.join("videos", f'trajectory_{args.horizon}_2.mp4')
+    video_file = os.path.join("videos", f'trajectory_{args.dataset}_{args.horizon}_uni.mp4')
     imageio.mimwrite(video_file, frames, fps=30)
     print(f"Saved video to {video_file}")
+    text_file = os.path.join("videos", f'speed_{args.dataset}_{args.horizon}_uni.txt')
+    try:
+        with open(text_file, 'w') as f:
+            for step, speed in enumerate(speed_list):
+                f.write(f"Step {step}: Speed {speed:.2f}\n")
+        print(f"Saved speed data to {text_file}")
+    except IOError as e:
+        print(f"Failed to save speed data: {e}")
 ## write results to json file at `args.savepath`
 #logger.finish(t, score, total_reward, terminal, diffusion_experiment, None)  # No value_experiment
 
