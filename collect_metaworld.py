@@ -10,7 +10,7 @@ import random
 import math
 
 def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_path,
-                          scaling_prob=0.8, scaling_ranges=None):
+                          scaling_prob=0.8, scaling_ranges=None, noise_mean=0.0, noise_std=0.1, noise_prob=0.5):
     """
     Collects trajectories from a specified Metaworld environment with variable speeds,
     ensuring a more uniform speed distribution by varying scaling factor ranges across trajectory groups.
@@ -53,6 +53,9 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
     policy_map = {
         'drawer-close-v2': SawyerDrawerCloseV2Policy(),
         'door-open-v2': SawyerDoorOpenV2Policy(),
+        'reach-v2': SawyerReachV2Policy(),
+        'pick-place-v2': SawyerPickPlaceV2Policy(),
+        'button-press-v2': SawyerButtonPressV2Policy(),
         # Add other mappings here
     }
 
@@ -115,6 +118,12 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
             else:
                 # No scaling applied
                 scaled_action = action.copy()
+
+            # Apply Gaussian noise with the specified probability
+            if random.random() < noise_prob:
+                noise = np.random.normal(noise_mean, noise_std, size=scaled_action[:-1].shape)
+                scaled_action[:-1] += noise  # Only apply noise to the movement components, not the gripper
+
 
             # Clip the scaled action to ensure it remains within valid bounds
             scaled_action[:-1] = np.clip(scaled_action[:-1], env.action_space.low[:-1], env.action_space.high[:-1])

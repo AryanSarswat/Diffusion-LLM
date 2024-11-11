@@ -4,7 +4,7 @@ import pdb
 
 
 class CustomGuide(nn.Module):
-    def __init__(self, loss_fn, model):
+    def __init__(self, loss_fn, model,normalizer):
         """
         Initializes the CustomGuide.
 
@@ -16,6 +16,7 @@ class CustomGuide(nn.Module):
         """
         super().__init__()
         self.model = model
+        self.normalizer=normalizer
 
         if isinstance(loss_fn, str):
             # Dynamically compile the loss function from a string
@@ -42,7 +43,7 @@ class CustomGuide(nn.Module):
         Returns:
             torch.Tensor: Tensor of shape [batch_size], loss values per trajectory.
         """
-        loss_values = self.loss_fn(x, self.model.observation_dim)
+        loss_values = self.loss_fn(x, self.model.observation_dim,self.model.action_dim,self.normalizer)
         return loss_values  # Shape: [batch_size]
 
     def gradients(self, x, cond, t):
@@ -58,14 +59,17 @@ class CustomGuide(nn.Module):
             Tuple[torch.Tensor, torch.Tensor]: Tuple containing loss_values and gradients,
                                                both detached from the computation graph.
         """
-        x = x.clone().detach().requires_grad_(True)
-        # Compute per-sample loss
-        loss_values = self.forward(x, t)  # Shape: [batch_size]
-        # Compute gradients: sum loss_values to aggregate gradients for backprop
-        grad = torch.autograd.grad(loss_values.sum(), x)[0]  # Shape: [batch_size, horizon, transition_dim]
-        # Detach x from the computation graph
-        x = x.detach()
-        return loss_values.detach(), grad  # Both tensors are detached
+        x.requires_grad_(True)
+        loss_values = self.forward(x, t)
+        #gok=torch.autograd.gradcheck(lambda x: self.forward(x.double(), t), x.double(), eps=1e-6, atol=1e-4, rtol=1e-3)
+        grad = torch.autograd.grad(loss_values.sum(), x,retain_graph=True)[0]
+        grad = torch.clamp(grad, min=-1.0, max=1.0)
+        #x = x.detach()
+        #print("GRAD: ",grad)
+        """ print(f"Loss mean: {loss_values.mean().item()}")
+        print(f"Non-zero gradients: {(grad != 0).sum().item()}")
+        print(f"Gradient mean: {grad.abs().mean().item()}") """
+        return loss_values.detach(), grad.detach()
 
 class ValueGuide(nn.Module):
 

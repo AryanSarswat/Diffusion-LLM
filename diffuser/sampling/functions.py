@@ -13,7 +13,7 @@ def n_step_guided_p_sample(
     model_log_variance = extract(model.posterior_log_variance_clipped, t, x.shape)
     model_std = torch.exp(0.5 * model_log_variance)
     model_var = torch.exp(model_log_variance)
-
+    #print("X_BEFORE:",x[0,0,:4])
     for _ in range(n_guide_steps):
         with torch.enable_grad():
             y, grad = guide.gradients(x, cond, t)
@@ -25,6 +25,11 @@ def n_step_guided_p_sample(
 
         x = x + scale * grad
         x = apply_conditioning(x, cond, model.action_dim)
+    
+    """ print("X_AFTER:",x[0,0,:4])
+    if t[0]>t_stopgrad:
+        print("\n\nSTOP\n\n") """
+        
 
     model_mean, _, model_log_variance = model.p_mean_variance(x=x, cond=cond, t=t)
 

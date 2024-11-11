@@ -127,8 +127,6 @@ def main():
     # Load data
     print('Loading data...')
     data = load_data(args.data_path)
-    print("DATA",data)
-    pr
     
     # Initialize environment
     print('Initializing environment...')

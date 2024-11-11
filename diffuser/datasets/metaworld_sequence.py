@@ -18,7 +18,7 @@ class MetaworldSequenceDataset(SequenceDataset):
         self.preprocess_fn = get_preprocess_fn(preprocess_fns, env)
         mt = metaworld.ML1(env)
         env = mt.train_classes[env]()
-        task = random.choice(mt.train_tasks)
+        task = random.choice(mt.test_tasks)
         env.set_task(task)
         self.env = env
         self.horizon = horizon
