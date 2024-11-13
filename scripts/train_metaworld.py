@@ -30,6 +30,19 @@ dataset_config = utils.Config(
 
 dataset = dataset_config()
 
+val_dataset_config = utils.Config(
+    'datasets.MetaworldSequenceDataset',  # Use the custom dataset class
+    savepath=(args.savepath, 'val_dataset_config.pkl'),
+    env=args.dataset,
+    data_path=args.val_data_path,  # Path to your collected data
+    horizon=args.horizon,
+    normalizer=args.normalizer,
+    preprocess_fns=args.preprocess_fns,
+    use_padding=args.use_padding,
+    max_path_length=args.max_path_length,
+)
+
+val_dataset = val_dataset_config()
 
 render_config = utils.Config(
     args.renderer,
@@ -99,7 +112,7 @@ model = model_config()
 
 diffusion = diffusion_config(model)
 
-trainer = trainer_config(diffusion, dataset, renderer)
+trainer = trainer_config(diffusion, dataset, renderer,validation_dataset=val_dataset)
 
 
 #-----------------------------------------------------------------------------#

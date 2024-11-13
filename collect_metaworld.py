@@ -10,7 +10,7 @@ import random
 import math
 
 def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_path,
-                          scaling_prob=0.8, scaling_ranges=None, noise_mean=0.0, noise_std=0.1, noise_prob=0.5):
+                          scaling_prob=0.8, scaling_ranges=None, noise_mean=0.0, noise_std=0.50, noise_prob=1, wall_prob=0.0):
     """
     Collects trajectories from a specified Metaworld environment with variable speeds,
     ensuring a more uniform speed distribution by varying scaling factor ranges across trajectory groups.
@@ -38,6 +38,9 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
     mt = metaworld.ML1(env_name)
     env = mt.train_classes[env_name]()
     tasks = mt.train_tasks  # All available tasks
+    mt2 = metaworld.ML1('button-press-wall-v2')
+    env2 = mt2.train_classes['button-press-wall-v2']()
+    tasks2 = mt2.train_tasks  # All available tasks
 
     data = {
         'observations': [],
@@ -56,6 +59,7 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
         'reach-v2': SawyerReachV2Policy(),
         'pick-place-v2': SawyerPickPlaceV2Policy(),
         'button-press-v2': SawyerButtonPressV2Policy(),
+        'button-press-wall-v2': SawyerButtonPressWallV2Policy()
         # Add other mappings here
     }
 
@@ -63,6 +67,7 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
         raise ValueError(f"No policy defined for environment '{env_name}'.")
 
     policy = policy_map[env_name]
+    policy2=policy_map['button-press-wall-v2']
 
     # Calculate the number of groups
     num_groups = math.ceil(num_trajectories / group_size)
@@ -71,11 +76,19 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
 
     for traj_idx in tqdm(range(num_trajectories), desc=f"Collecting trajectories for '{env_name}'"):
         # Assign a unique seed for each trajectory to ensure diversity
-        env.seed(traj_idx)
-        task = random.choice(tasks)
-        env.set_task(task)
+        wall=random.random() < wall_prob
+        current_env = env2 if wall else env
+        tasks_to_use = tasks2 if wall else tasks
+        current_policy= policy2 if wall else policy
+        
+        
+        # Set the environment's task and reset
+        current_env.seed(traj_idx)
+        task = random.choice(tasks_to_use)
+        current_env.set_task(task)
 
-        obs = env.reset()
+
+        obs = current_env.reset()
         observations = []
         actions = []
         rewards = []
@@ -100,7 +113,7 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
             scaling_strategy = None 
 
         for t in range(max_path_length):
-            action = policy.get_action(obs) 
+            action = current_policy.get_action(obs) 
             if apply_scaling:
                 if scaling_strategy == 'per_trajectory':
                     # Scale all but the last action component (gripper) uniformly
@@ -126,10 +139,10 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
 
 
             # Clip the scaled action to ensure it remains within valid bounds
-            scaled_action[:-1] = np.clip(scaled_action[:-1], env.action_space.low[:-1], env.action_space.high[:-1])
+            scaled_action[:-1] = np.clip(scaled_action[:-1], current_env.action_space.low[:-1], current_env.action_space.high[:-1])
 
             # Execute the (possibly scaled) action
-            next_obs, reward, _, info = env.step(scaled_action)
+            next_obs, reward, _, info = current_env.step(scaled_action)
             done = int(info.get('success', False)) == 1
 
             # Record data

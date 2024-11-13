@@ -6,6 +6,7 @@ import einops
 import pdb
 
 from .arrays import batch_to_device, to_np, to_device, apply_dict
+from torch.utils.tensorboard import SummaryWriter
 from .timer import Timer
 from .cloud import sync_logs
 
@@ -38,13 +39,16 @@ class Trainer(object):
         diffusion_model,
         dataset,
         renderer,
+        validation_dataset=None,
         ema_decay=0.995,
         train_batch_size=32,
+        val_batch_size=32,
         train_lr=2e-5,
         gradient_accumulate_every=2,
         step_start_ema=2000,
         update_ema_every=10,
         log_freq=100,
+        val_log_freq=1000,
         sample_freq=1000,
         save_freq=1000,
         label_freq=100000,
@@ -54,6 +58,7 @@ class Trainer(object):
         bucket=None,
     ):
         super().__init__()
+        self.writer = SummaryWriter(log_dir=os.path.join(results_folder, 'logs'))
         self.model = diffusion_model
         self.ema = EMA(ema_decay)
         self.ema_model = copy.deepcopy(self.model)
@@ -61,6 +66,7 @@ class Trainer(object):
 
         self.step_start_ema = step_start_ema
         self.log_freq = log_freq
+        self.val_log_freq=val_log_freq
         self.sample_freq = sample_freq
         self.save_freq = save_freq
         self.label_freq = label_freq
@@ -79,6 +85,15 @@ class Trainer(object):
         self.renderer = renderer
         self.optimizer = torch.optim.Adam(diffusion_model.parameters(), lr=train_lr)
 
+        # Validation-related attributes
+        self.validation_dataset = validation_dataset
+        if self.validation_dataset is not None:
+            self.val_dataloader = cycle(torch.utils.data.DataLoader(
+                self.validation_dataset, batch_size=val_batch_size, num_workers=1, shuffle=False, pin_memory=True
+            ))
+        else:
+            self.val_dataloader = None
+
         self.logdir = results_folder
         self.bucket = bucket
         self.n_reference = n_reference
@@ -95,12 +110,30 @@ class Trainer(object):
             return
         self.ema.update_model_average(self.ema_model, self.model)
 
-    #-----------------------------------------------------------------------------#
-    #------------------------------------ api ------------------------------------#
-    #-----------------------------------------------------------------------------#
+    def evaluate(self):
+        if self.val_dataloader is None:
+            print("No validation dataset provided.")
+            return
+
+        self.model.eval()
+        self.ema_model.eval()
+        val_loss = 0.0
+        num_batches = 0
+        with torch.no_grad():
+            batch = next(self.val_dataloader)
+            batch = batch_to_device(batch)
+            loss, infos = self.model.loss(*batch)
+            val_loss += loss.item()
+            num_batches += 1
+
+        avg_val_loss = val_loss / num_batches
+        self.writer.add_scalar('Validation/Loss', avg_val_loss, self.step)
+        print(f'Validation Loss at step {self.step}: {avg_val_loss:.4f}')
+
+        self.model.train()
+        self.ema_model.train()
 
     def train(self, n_train_steps):
-
         timer = Timer()
         for step in range(n_train_steps):
             for i in range(self.gradient_accumulate_every):
@@ -124,6 +157,13 @@ class Trainer(object):
             if self.step % self.log_freq == 0:
                 infos_str = ' | '.join([f'{key}: {val:8.4f}' for key, val in infos.items()])
                 print(f'{self.step}: {loss:8.4f} | {infos_str} | t: {timer():8.4f}', flush=True)
+                for key, val in infos.items():
+                    self.writer.add_scalar(f'Train/{key}', val, self.step)
+                self.writer.add_scalar('Train/Loss', loss.item(), self.step)
+
+            if self.step % self.val_log_freq==0:
+                # Add evaluation step
+                self.evaluate()
 
             if self.step == 0 and self.sample_freq:
                 self.render_reference(self.n_reference)

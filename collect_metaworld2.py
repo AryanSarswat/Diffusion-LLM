@@ -24,7 +24,7 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
         'timeouts': [],
         'success': [],
     }
-    policy = SawyerReachWallV2Policy()
+    policy = SawyerButtonPressWallV2Policy()
 
     # Ensure video path exists
     if render_videos and video_path is not None:
@@ -85,7 +85,7 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env_name', type=str, default='reach-wall-v2')
+    parser.add_argument('--env_name', type=str, default='button-press-wall-v2')
     parser.add_argument('--num_trajectories', type=int, default=1000)
     parser.add_argument('--max_path_length', type=int, default=500)
     parser.add_argument('--save_path', type=str, default='metaworld_drawer_close_data2.pkl')
