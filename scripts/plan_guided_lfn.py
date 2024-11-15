@@ -28,7 +28,7 @@ diffusion_experiment = utils.load_diffusion(
     epoch=args.diffusion_epoch, seed=args.seed,
 )
 
-dataset_config = utils.Config(
+""" dataset_config = utils.Config(
     'datasets.MetaworldSequenceDataset',  # Use the custom dataset class
     savepath=(args.savepath, 'dataset_config.pkl'),
     env=args.dataset,
@@ -40,10 +40,10 @@ dataset_config = utils.Config(
     max_path_length=args.max_path_length,
 )
 
-dataset = dataset_config()
+dataset = dataset_config() """
 
 diffusion = diffusion_experiment.ema
-#dataset = diffusion_experiment.dataset #Uncomment if using same env as during training
+dataset = diffusion_experiment.dataset #Uncomment if using same env as during training
 renderer = diffusion_experiment.renderer
 
 

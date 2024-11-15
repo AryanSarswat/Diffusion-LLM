@@ -32,64 +32,7 @@ pip install -e .
 
 ### Downloading weights
 
-Download pretrained diffusion models and value functions with:
-```
-./scripts/download_pretrained.sh
-```
 
-This command downloads and extracts a [tarfile](https://drive.google.com/file/d/1wc1m4HLj7btaYDN8ogDIAV9QzgWEckGy/view?usp=share_link) containing [this directory](https://drive.google.com/drive/folders/1ie6z3toz9OjcarJuwjQwXXzDwh1XnS02?usp=sharing) to `logs/pretrained`. The models are organized according to the following structure:
-```
-└── logs/pretrained
-    ├── ${environment_1}
-    │   ├── diffusion
-    │   │   └── ${experiment_name}
-    │   │       ├── state_${epoch}.pt
-    │   │       ├── sample-${epoch}-*.png
-    │   │       └── {dataset, diffusion, model, render, trainer}_config.pkl
-    │   ├── values
-    │   │   └── ${experiment_name}
-    │   │       ├── state_${epoch}.pt
-    │   │       └── {dataset, diffusion, model, render, trainer}_config.pkl
-    │   └── plans
-    │       └── defaults
-    │           ├── 0
-    │           ├── 1
-    │           ├── ...
-    │           └── 149
-    │
-    ├── ${environment_2}
-    │   └── ...
-```
-
-The `state_${epoch}.pt` files contain the network weights and the `config.pkl` files contain the instantation arguments for the relevant classes.
-The png files contain samples from different points during training of the diffusion model.
-Within the `plans` subfolders, there are the results of 150 evaluation trials for each environment using the default hyperparameters.
-
-<details>
-<summary>To aggregate the results of the evaluations in the <code>logs</code> folder, run <code>python scripts/read_results.py</code>. (Expand to view the output of this command on the plans downloaded from Google Drive.)
-</summary>
-
-```
-hopper-medium-replay-v2        | defaults   | logs/pretrained/hopper-medium-replay-v2/plans      | 150 scores
-    93.6 +/- 0.37
-hopper-medium-v2               | defaults   | logs/pretrained/hopper-medium-v2/plans             | 150 scores
-    74.3 +/- 1.36
-hopper-medium-expert-v2        | defaults   | logs/pretrained/hopper-medium-expert-v2/plans      | 150 scores
-    103.3 +/- 1.30
-walker2d-medium-replay-v2      | defaults   | logs/pretrained/walker2d-medium-replay-v2/plans    | 150 scores
-    70.6 +/- 1.60
-walker2d-medium-v2             | defaults   | logs/pretrained/walker2d-medium-v2/plans           | 150 scores
-    79.6 +/- 0.55
-walker2d-medium-expert-v2      | defaults   | logs/pretrained/walker2d-medium-expert-v2/plans    | 150 scores
-    106.9 +/- 0.24
-halfcheetah-medium-replay-v2   | defaults   | logs/pretrained/halfcheetah-medium-replay-v2/plans | 150 scores
-    37.7 +/- 0.45
-halfcheetah-medium-v2          | defaults   | logs/pretrained/halfcheetah-medium-v2/plans        | 150 scores
-    42.8 +/- 0.32
-halfcheetah-medium-expert-v2   | defaults   | logs/pretrained/halfcheetah-medium-expert-v2/plans | 150 scores
-    88.9 +/- 0.25
-```
-</details>
 
 <details>
 <summary>To create the table of offline RL results from the paper, run <code>python plotting/table.py</code>. This will print a table that can be copied into a Latex document. (Expand to view table source.)</summary>
@@ -137,28 +80,36 @@ Medium-Replay & Walker2d & $26.0$ & $77.2$ & $73.9$ & $66.6$ & $\textbf{\color{t
 
 To plan with guided sampling, run:
 ```
-python scripts/plan_guided.py --dataset halfcheetah-medium-expert-v2 --logbase logs/pretrained
+python scripts/plan_guided_lfn.py     --dataset button-press-wall-v2     --diffusion_loadpath /home/kurt/HRI/diffuser/logs/button-press-v2/diffusion/metaworld_H8_T20_noisy --horizon 8 --descending False '
 ```
+Where "descending" controls how the loss values are ordered to pick the first trajectory.
 
-The `--logbase` flag points the [experiment loaders](scripts/plan_guided.py#L22-L30) to the folder containing the pretrained models.
-You can override planning hyperparameters with flags, such as `--batch_size 8`, but the default
-hyperparameters are a good starting point.
+To run unguided:
 
+```
+python scripts/plan_unguided.py     --dataset button-press-v2     --diffusion_loadpath /home/kurt/HRI/diffuser/logs/button-press-v2/diffusion/metaworld_H8_T20_noisy --horizon 8
+```
 ## Training from scratch
 
 1. Train a diffusion model with:
 ```
-python scripts/train_metaworld.py --dataset drawer-close-v2
+python scripts/train_metaworld.py --dataset button-press-v2 --data_path '/home/kurt/HRI/diffuser/metaworld_button_press_data_150_uniform_noisy.pkl' --val_data_path '/home/kurt/HRI/diffuser/metaworld_button_press_validation.pkl'
 ```
+You can pass your dataset for training in "data_path" and you validation dataset on "val_data_path"
 
 The default hyperparameters are listed in [locomotion:diffusion](config/locomotion.py#L22-L65).
 You can override any of them with flags, eg, `--n_diffusion_steps 100`.
+Be sure to add parameters you want to change for each task if required
 
 2. Plan using your newly-trained models with the same command as in the pretrained planning section, simply replacing the logbase to point to your new models:
-```
+
 #Using Loss function for guidance
+```
 python scripts/plan_guided_lfn.py  --dataset drawer-close-v2 --diffusion_loadpath /home/kurt/HRI/diffuser/logs/drawer-close-v2/diffusion/metaworld_H8_T20 --horizon 8 --descending False
+```
+Where "descending" controls how the loss values are ordered to pick the first trajectory.
 #Without any guidance
+```
 python scripts/plan_unguided.py --dataset drawer-close-v2  --diffusion_loadpath /home/kurt/HRI/diffuser/logs/drawer-close-v2/diffusion/metaworld_H8_T20 --horizon 8
 ```
 See [locomotion:plans](config/locomotion.py#L110-L149) for the corresponding default hyperparameters.
