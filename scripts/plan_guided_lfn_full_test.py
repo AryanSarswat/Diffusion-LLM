@@ -7,6 +7,7 @@ import imageio
 import os
 import torch
 import numpy as np
+import json
 
 #-----------------------------------------------------------------------------#
 #----------------------------------- setup -----------------------------------#
@@ -98,8 +99,6 @@ def predefined_loss_fn(x, obs_dim,action_dim,normalizer, wall_pos=None, min_safe
 
     return loss_per_trajectory  # Shape: [batch_size]
 
-import torch
-import torch.nn.functional as F
 
 import torch
 import torch.nn.functional as F
@@ -364,113 +363,119 @@ policy = policy_config()
 #--------------------------------- main loop ---------------------------------#
 #-----------------------------------------------------------------------------#
 
-env = dataset.env
-observation = env.reset()
+import metaworld
+mt = metaworld.ML1(args.dataset)
+env = mt.train_classes[args.dataset]()
+tasks = mt.test_tasks
+success_r=[]
+for i,task in enumerate(tasks):
+    env.set_task(task)
+    observation = env.reset()
 
 
-## Observations for rendering
-rollout = [observation.copy()]
+    ## Observations for rendering
+    #rollout = [observation.copy()]
 
-total_reward = 0
-frames = []
-speed_list = []
-pos_list = []
-d_list={}
-done=False
-for t in range(args.max_episode_length):
+    total_reward = 0
+    frames = []
+    speed_list = []
+    pos_list = []
+    d_list={}
+    done=False
+    success = 0
+    for t in range(args.max_episode_length):
 
-    if t % 10 == 0: print(args.savepath, flush=True)
+        if t % 10 == 0: print(args.savepath, flush=True)
 
-    ## Save state for rendering only
-    #state = env.state_vector().copy()
+        ## Save state for rendering only
+        #state = env.state_vector().copy()
 
-    ## Format current observation and goal for conditioning
-    conditions = {0: observation}
+        ## Format current observation and goal for conditioning
+        conditions = {0: observation}
 
-    action, samples = policy(conditions, batch_size=args.batch_size, verbose=args.verbose)
+        action, samples = policy(conditions, batch_size=args.batch_size, verbose=args.verbose)
 
-    
-    ## Execute action in environment
-    action[:-1] = np.clip(action[:-1], env.action_space.low[:-1], env.action_space.high[:-1])
-    next_observation, reward, terminal, info = env.step(action)
+        
+        ## Execute action in environment
+        action[:-1] = np.clip(action[:-1], env.action_space.low[:-1], env.action_space.high[:-1])
+        next_observation, reward, terminal, info = env.step(action)
 
-    ###########
-    wall_body_pos = torch.tensor([0.1, 0.6, 0.0], device='cuda')  # [0.1, 0.6, 0]
-    wall_size = torch.tensor([0.1, 0.01, 0.075], device='cuda')  # from wall.xml
+        ###########
 
-    min_safe_dist=0.3
-    current_positions = torch.tensor(observation[:3],device='cuda')
-    actions=torch.tensor(action[:-1],device='cuda')
-    predicted_positions = current_positions + actions
-    
-    # Calculate distances to wall SURFACES (not center)
-    dx = torch.abs(predicted_positions[..., 0] - wall_body_pos[0]) - wall_size[0]
-    dy = torch.abs(predicted_positions[..., 1] - wall_body_pos[1]) - wall_size[1]
-    dz = torch.abs(predicted_positions[..., 2] - wall_body_pos[2]) - wall_size[2]
-    
-    # Check violations (negative distance means we're inside the wall)
-    x_violation = dx < min_safe_dist
-    y_violation = dy < min_safe_dist
-    z_violation = dz < min_safe_dist
-    
-    # Position violates if within bounds in all dimensions
-    in_violation = x_violation & y_violation & z_violation
-    
-    # Calculate penetration (how much we're violating the safe distance)
-    x_pen = torch.relu(min_safe_dist - dx)
-    y_pen = torch.relu(min_safe_dist - dy)
-    z_pen = torch.relu(min_safe_dist - dz)
-    
-    penetration = torch.where(
-        in_violation,
-        x_pen**2 + y_pen**2 + z_pen**2,
-        torch.zeros_like(dx)
-    )
-    print("DISTANCE TO WALL: ",torch.sqrt(penetration), "  Hand POS: ",current_positions)
-    ###########
-    done = int(info.get('success', False)) == 1
+        current_positions = torch.tensor(observation[:3],device='cuda')
+        print("Hand POS: ",current_positions)
+        ###########
+        done = int(info.get('success', False)) == 1
 
-    action = torch.tensor(action) if isinstance(action, np.ndarray) else action
-    speed = torch.linalg.norm(action).item()
+        action = torch.tensor(action) if isinstance(action, np.ndarray) else action
+        speed = torch.linalg.norm(action).item()
 
-    speed_list.append(speed)
-    pos_list.append(observation[:3])
-    d_list[t]={'dx':x_violation,'dy':y_violation,'dz':z_violation}
-    ## Print reward and score
-    total_reward += reward
-    #score = env.get_normalized_score(total_reward)
-    print(
-        f't: {t} | r: {reward:.2f} | R: {total_reward:.2f} | '
-        f'values: {samples.values} | scale: {args.scale}',
-        flush=True,
-    )
+        speed_list.append(speed)
+        pos_list.append(observation[:3])
+
+        ## Print reward and score
+        total_reward += reward
+        #score = env.get_normalized_score(total_reward)
+        print(
+            f't: {t} | r: {reward:.2f} | R: {total_reward:.2f} | '
+            f'values: {samples.values} | scale: {args.scale}',
+            flush=True,
+        )
+
+        if args.render_videos:
+            img = env.render(offscreen=True)
+            frames.append(img)
+
+        ## Update rollout observations
+        #rollout.append(next_observation.copy())
+
+        ## Render every `args.vis_freq` steps
+        #logger.log(t, samples, state, rollout)
+
+        if done:
+            success = 1
+            break
+
+        observation = next_observation
+
+    success_r.append(success)
 
     if args.render_videos:
-        img = env.render(offscreen=True)
-        frames.append(img)
+        video_file = os.path.join("videos/guided_test1_spatial", f'trajectory_guided_spatial{i}_{args.dataset}_{args.horizon}.mp4')
+        imageio.mimwrite(video_file, frames, fps=30)
+        print(f"Saved video to {video_file}")
+        trajectory_data = {
+            "trajectory_id": i,
+            "success": success,
+            "steps": [
+                {"step": step, "speed": speed, "hand_position": pos_list[step].tolist()}
+                for step, speed in enumerate(speed_list)
+            ]
+        }
 
-    ## Update rollout observations
-    rollout.append(next_observation.copy())
+        # Append to a main JSON file for all trajectories
+        json_file = "videos/guided_test1_spatial/all_trajectory_data.json"
+        try:
+            # Load existing data if file exists, otherwise initialize empty list
+            if os.path.exists(json_file):
+                with open(json_file, 'r') as f:
+                    all_trajectory_data = json.load(f)
+            else:
+                all_trajectory_data = []
 
-    ## Render every `args.vis_freq` steps
-    #logger.log(t, samples, state, rollout)
+            # Add the new trajectory data
+            all_trajectory_data.append(trajectory_data)
 
-    if done:
-        break
+            # Save updated data back to JSON
+            with open(json_file, 'w') as f:
+                json.dump(all_trajectory_data, f, indent=4)
+            print(f"Appended trajectory data to {json_file}")
+        except IOError as e:
+            print(f"Failed to save trajectory data: {e}")
 
-    observation = next_observation
-
-if args.render_videos:
-    video_file = os.path.join("videos", f'trajectory_guided_spatial_{args.dataset}_{args.horizon}_uniform4.mp4')
-    imageio.mimwrite(video_file, frames, fps=30)
-    print(f"Saved video to {video_file}")
-    text_file = os.path.join("videos", f'speed_guided_spatial_{args.dataset}_{args.horizon}_uniform.txt')
-    try:
-        with open(text_file, 'w') as f:
-            for step, speed in enumerate(speed_list):
-                f.write(f"Step {step}: Speed {speed:.2f} Hand_pos {pos_list[step]} Viol {d_list[step]}\n")
-        print(f"Saved speed data to {text_file}")
-    except IOError as e:
-        print(f"Failed to save speed data: {e}")
+overall_success_rate = (sum(success_r) / len(tasks)) * 100
+with open("videos/guided_test1_spatial/res.txt", 'w') as f:
+    f.write(f"Overall Success Rate: {overall_success_rate}%\n")
+print(f"Overall Success Rate: {overall_success_rate}%")
 ## Write results to json file at `args.savepath`
 #logger.finish(t, score, total_reward, terminal, diffusion_experiment, None)  # No value_experiment

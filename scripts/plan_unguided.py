@@ -6,6 +6,7 @@ import imageio
 import os
 import torch
 import numpy as np
+import json
 
 #-----------------------------------------------------------------------------#
 #----------------------------------- setup -----------------------------------#
@@ -86,6 +87,7 @@ for i,task in enumerate(tasks):
     total_reward = 0
     frames = []
     speed_list = []
+    pos_list = []
     success = 0
     for t in range(args.max_episode_length):
 
@@ -107,6 +109,7 @@ for i,task in enumerate(tasks):
         speed = torch.linalg.norm(action).item()
 
         speed_list.append(speed)
+        pos_list.append(observation[:3])
 
         ## print reward and score
         total_reward += reward
@@ -135,18 +138,41 @@ for i,task in enumerate(tasks):
     
     success_r.append(success)
     if args.render_videos:
-        video_file = os.path.join("videos/test1", f'trajectory_{i}_{args.dataset}_{args.horizon}.mp4')
+        video_file = os.path.join("videos/test1_button_unguided_noWall", f'trajectory_{i}_{args.dataset}_{args.horizon}.mp4')
         imageio.mimwrite(video_file, frames, fps=30)
         print(f"Saved video to {video_file}")
-        """ text_file = os.path.join("videos", f'speed_{args.dataset}_{args.horizon}_uni.txt')
+        trajectory_data = {
+            "trajectory_id": i,
+            "success": success,
+            "steps": [
+                {"step": step, "speed": speed, "hand_position": pos_list[step].tolist()}
+                for step, speed in enumerate(speed_list)
+            ]
+        }
+
+        # Append to a main JSON file for all trajectories
+        json_file = "videos/test1_button_unguided_noWall/all_trajectory_data.json"
         try:
-            with open(text_file, 'w') as f:
-                for step, speed in enumerate(speed_list):
-                    f.write(f"Step {step}: Speed {speed:.2f}\n")
-            print(f"Saved speed data to {text_file}")
+            # Load existing data if file exists, otherwise initialize empty list
+            if os.path.exists(json_file):
+                with open(json_file, 'r') as f:
+                    all_trajectory_data = json.load(f)
+            else:
+                all_trajectory_data = []
+
+            # Add the new trajectory data
+            all_trajectory_data.append(trajectory_data)
+
+            # Save updated data back to JSON
+            with open(json_file, 'w') as f:
+                json.dump(all_trajectory_data, f, indent=4)
+            print(f"Appended trajectory data to {json_file}")
         except IOError as e:
-            print(f"Failed to save speed data: {e}") """
+            print(f"Failed to save trajectory data: {e}")
+
 overall_success_rate = (sum(success_r) / len(tasks)) * 100
+with open("videos/test1_button_unguided_noWall/res.txt", 'w') as f:
+    f.write(f"Overall Success Rate: {overall_success_rate}%\n")
 print(f"Overall Success Rate: {overall_success_rate}%")
 ## write results to json file at `args.savepath`
 #logger.finish(t, score, total_reward, terminal, diffusion_experiment, None)  # No value_experiment

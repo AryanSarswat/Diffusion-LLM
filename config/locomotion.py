@@ -408,7 +408,7 @@ button_press_wall_v2= {
         'guide': 'sampling.CustomGuide',
         'descending': 'True',
         'max_episode_length': 500,
-        'n_guide_steps': 6,
+        'n_guide_steps': 10,
         'horizon': 128,
         'scale': 0.5,
         't_stopgrad': 4,
