@@ -305,7 +305,7 @@ reach_v2= {
         'model': 'models.TemporalUnet',
         'diffusion': 'models.GaussianDiffusion',
         'horizon': 8,  # Adjust based on your planning horizon
-        'n_diffusion_steps': 20,
+        'n_diffusion_steps': 100,
         'action_weight': 1,
         'loss_weights': None,
         'loss_discount': 1,
@@ -328,16 +328,16 @@ reach_v2= {
         'exp_name': watch(args_to_watch),
 
         # Training parameters
-        'n_steps_per_epoch': 10000,
+        'n_steps_per_epoch': 290,
         'loss_type': 'l1',
-        'n_train_steps': 200000,
+        'n_train_steps': 426000,
         'batch_size': 64,
-        'learning_rate': 4e-4,
-        'gradient_accumulate_every': 2,
+        'learning_rate': 2e-4,
+        'gradient_accumulate_every': 1,
         'ema_decay': 0.995,
         'save_freq': 20000,
         'sample_freq': 20000,
-        'n_saves': 8,
+        'n_saves': 20,
         'save_parallel': False,
         'n_reference': 8,
         'bucket': None,
@@ -429,6 +429,140 @@ button_press_wall_v2= {
 }
 
 button_press_v2= {
+    'diffusion': {
+        'model': 'models.TemporalUnet',
+        'diffusion': 'models.GaussianDiffusion',
+        'horizon': 8,  # Adjust based on your planning horizon
+        'n_diffusion_steps': 20,
+        'action_weight': 1,
+        'loss_weights': None,
+        'loss_discount': 1,
+        'predict_epsilon': False,
+        'dim_mults': (1, 2, 4, 8),
+        'attention': False,
+        'renderer': 'utils.MetaworldRenderer',
+
+        # Dataset parameters
+        'loader': 'datasets.MetaworldSequenceDataset',
+        'normalizer': 'GaussianNormalizer',
+        'preprocess_fns': [],
+        'clip_denoised': False,
+        'use_padding': True,
+        'max_path_length': 500,  # Match with data collection max_path_length
+
+        # Serialization
+        'logbase': logbase,
+        'prefix': 'diffusion/metaworld',
+        'exp_name': watch(args_to_watch),
+
+        # Training parameters
+        'n_steps_per_epoch': 290,
+        'loss_type': 'l1',
+        'n_train_steps': 426000,
+        'batch_size': 32,
+        'learning_rate': 2e-4,
+        'gradient_accumulate_every': 1,
+        'ema_decay': 0.995,
+        'save_freq': 20000,
+        'sample_freq': 20000,
+        'n_saves': 20,
+        'save_parallel': False,
+        'n_reference': 8,
+        'bucket': None,
+        'device': 'cuda',
+        'seed': None,
+    },
+    'plan': {
+        'guide': 'sampling.CustomGuide',
+        'descending': 'True',
+        'max_episode_length': 500,
+        'n_guide_steps': 2,
+        'horizon': 128,
+        'scale': 0.1,
+        't_stopgrad': 4,
+        'render_videos': True,
+        ## loading
+        'diffusion_epoch': 'latest',
+        'verbose': True,
+        'suffix': '0',
+        #reload datasetiwith other env
+        'loader': 'datasets.MetaworldSequenceDataset',
+        'normalizer': 'GaussianNormalizer',
+        'preprocess_fns': [],
+        'clip_denoised': False,
+        'use_padding': True,
+        'max_path_length': 500,
+    },
+}
+
+pick_place_v2= {
+    'diffusion': {
+        'model': 'models.TemporalUnet',
+        'diffusion': 'models.GaussianDiffusion',
+        'horizon': 8,  # Adjust based on your planning horizon
+        'n_diffusion_steps': 20,
+        'action_weight': 1,
+        'loss_weights': None,
+        'loss_discount': 1,
+        'predict_epsilon': False,
+        'dim_mults': (1, 2, 4, 8),
+        'attention': False,
+        'renderer': 'utils.MetaworldRenderer',
+
+        # Dataset parameters
+        'loader': 'datasets.MetaworldSequenceDataset',
+        'normalizer': 'GaussianNormalizer',
+        'preprocess_fns': [],
+        'clip_denoised': False,
+        'use_padding': True,
+        'max_path_length': 500,  # Match with data collection max_path_length
+
+        # Serialization
+        'logbase': logbase,
+        'prefix': 'diffusion/metaworld',
+        'exp_name': watch(args_to_watch),
+
+        # Training parameters
+        'n_steps_per_epoch': 290,
+        'loss_type': 'l1',
+        'n_train_steps': 426000,
+        'batch_size': 32,
+        'learning_rate': 2e-4,
+        'gradient_accumulate_every': 1,
+        'ema_decay': 0.995,
+        'save_freq': 20000,
+        'sample_freq': 20000,
+        'n_saves': 20,
+        'save_parallel': False,
+        'n_reference': 8,
+        'bucket': None,
+        'device': 'cuda',
+        'seed': None,
+    },
+    'plan': {
+        'guide': 'sampling.CustomGuide',
+        'descending': 'True',
+        'max_episode_length': 500,
+        'n_guide_steps': 2,
+        'horizon': 128,
+        'scale': 0.1,
+        't_stopgrad': 4,
+        'render_videos': True,
+        ## loading
+        'diffusion_epoch': 'latest',
+        'verbose': True,
+        'suffix': '0',
+        #reload datasetiwith other env
+        'loader': 'datasets.MetaworldSequenceDataset',
+        'normalizer': 'GaussianNormalizer',
+        'preprocess_fns': [],
+        'clip_denoised': False,
+        'use_padding': True,
+        'max_path_length': 500,
+    },
+}
+
+push_v2= {
     'diffusion': {
         'model': 'models.TemporalUnet',
         'diffusion': 'models.GaussianDiffusion',

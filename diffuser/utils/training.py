@@ -86,11 +86,12 @@ class Trainer(object):
         self.optimizer = torch.optim.Adam(diffusion_model.parameters(), lr=train_lr)
 
         # Validation-related attributes
+        self.best_val_loss = float('inf')
         self.validation_dataset = validation_dataset
         if self.validation_dataset is not None:
-            self.val_dataloader = cycle(torch.utils.data.DataLoader(
+            self.val_dataloader = torch.utils.data.DataLoader(
                 self.validation_dataset, batch_size=val_batch_size, num_workers=1, shuffle=False, pin_memory=True
-            ))
+            )
         else:
             self.val_dataloader = None
 
@@ -120,15 +121,20 @@ class Trainer(object):
         val_loss = 0.0
         num_batches = 0
         with torch.no_grad():
-            batch = next(self.val_dataloader)
-            batch = batch_to_device(batch)
-            loss, infos = self.model.loss(*batch)
-            val_loss += loss.item()
-            num_batches += 1
+            for batch in self.val_dataloader:  # Iterate over all batches in validation dataset
+                batch = batch_to_device(batch)
+                loss, infos = self.model.loss(*batch)
+                val_loss += loss.item()
+                num_batches += 1
 
         avg_val_loss = val_loss / num_batches
         self.writer.add_scalar('Validation/Loss', avg_val_loss, self.step)
         print(f'Validation Loss at step {self.step}: {avg_val_loss:.4f}')
+        # Save best
+        if avg_val_loss < self.best_val_loss:
+            self.best_val_loss = avg_val_loss
+            # Optionally, save the best model
+            self.save('best')
 
         self.model.train()
         self.ema_model.train()

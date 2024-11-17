@@ -10,7 +10,7 @@ import random
 import math
 
 def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_path,
-                          scaling_prob=0.8, scaling_ranges=None, noise_mean=0.0, noise_std=0.50, noise_prob=1, wall_prob=0.0):
+                          scaling_prob=0.8, scaling_ranges=None, noise_mean=0.0, noise_std=0.10, noise_prob=0.3, wall_prob=0.0):
     """
     Collects trajectories from a specified Metaworld environment with variable speeds,
     ensuring a more uniform speed distribution by varying scaling factor ranges across trajectory groups.
@@ -35,10 +35,10 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
     group_size = num_trajectories // len(scaling_ranges)
 
     # Initialize Metaworld environment
-    mt = metaworld.ML1(env_name)
+    mt = metaworld.MT1(env_name)
     env = mt.train_classes[env_name]()
     tasks = mt.train_tasks  # All available tasks
-    mt2 = metaworld.ML1('button-press-wall-v2')
+    mt2 = metaworld.MT1('button-press-wall-v2')
     env2 = mt2.train_classes['button-press-wall-v2']()
     tasks2 = mt2.train_tasks  # All available tasks
 
@@ -59,7 +59,9 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
         'reach-v2': SawyerReachV2Policy(),
         'pick-place-v2': SawyerPickPlaceV2Policy(),
         'button-press-v2': SawyerButtonPressV2Policy(),
-        'button-press-wall-v2': SawyerButtonPressWallV2Policy()
+        'button-press-wall-v2': SawyerButtonPressWallV2Policy(),
+        'push-v2': SawyerPushV2Policy(),
+        'hand-insert-v2': SawyerHandInsertV2Policy(),
         # Add other mappings here
     }
 
@@ -88,7 +90,7 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
         current_env.set_task(task)
 
 
-        obs = current_env.reset()
+        obs= current_env.reset()
         observations = []
         actions = []
         rewards = []
@@ -188,8 +190,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     default_scaling_ranges = [
-        (0.01, 0.1),
-        (0.1, 0.2),
+        #(0.01, 0.1),
+        #(0.1, 0.2),
         (0.2, 0.25),
         (0.25, 0.3),
         (0.3, 0.5),

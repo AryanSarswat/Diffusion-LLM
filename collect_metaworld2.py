@@ -9,7 +9,7 @@ import random
 import os
 
 
-def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_path, render_videos=False, video_path=None, video_fps=10, video_dim=(256, 256)):
+def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_path, render_videos=False, video_path=None, video_fps=30, video_dim=(256, 256)):
     # Initialize Metaworld environment
     mt = metaworld.ML1(env_name)
     env = mt.train_classes[env_name]()
@@ -24,14 +24,29 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
         'timeouts': [],
         'success': [],
     }
-    policy = SawyerButtonPressWallV2Policy()
+    policy_map = {
+        'drawer-close-v2': SawyerDrawerCloseV2Policy(),
+        'door-open-v2': SawyerDoorOpenV2Policy(),
+        'reach-v2': SawyerReachV2Policy(),
+        'pick-place-v2': SawyerPickPlaceV2Policy(),
+        'button-press-v2': SawyerButtonPressV2Policy(),
+        'button-press-wall-v2': SawyerButtonPressWallV2Policy(),
+        'push-v2': SawyerPushV2Policy(),
+        'hand-insert-v2': SawyerHandInsertV2Policy(),
+        # Add other mappings here
+    }
+
+    if env_name not in policy_map:
+        raise ValueError(f"No policy defined for environment '{env_name}'.")
+
+    policy = policy_map[env_name]
 
     # Ensure video path exists
     if render_videos and video_path is not None:
         os.makedirs(video_path, exist_ok=True)
 
     for traj_idx in tqdm(range(num_trajectories), desc=f"Collecting trajectories for {env_name}"):
-        obs = env.reset()
+        obs, _ = env.reset()
         observations = []
         actions = []
         rewards = []
@@ -45,7 +60,7 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
 
         for t in range(max_path_length):
             action = policy.get_action(obs)
-            next_obs, reward, _, info = env.step(action)
+            next_obs, reward, _, _,info = env.step(action)
             done = int(info['success']) == 1
             observations.append(obs)
             actions.append(action)
@@ -55,7 +70,7 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
 
             # Render and store frames if enabled
             if render_videos:
-                img = env.render(offscreen=True)
+                img = env.render(render_mode="offscreen")
                 frames.append(img)
 
             if done:
@@ -73,7 +88,7 @@ def collect_metaworld_data(env_name, num_trajectories, max_path_length, save_pat
 
         # Save video if enabled
         if render_videos and video_path is not None:
-            video_file = os.path.join(video_path, f'trajectory_{traj_idx}.mp4')
+            video_file = os.path.join(video_path, f'TEST_trajectory_{traj_idx}.mp4')
             imageio.mimwrite(video_file, frames, fps=video_fps)
             print(f"Saved video to {video_file}")
 
@@ -91,7 +106,7 @@ if __name__ == "__main__":
     parser.add_argument('--save_path', type=str, default='metaworld_drawer_close_data2.pkl')
     parser.add_argument('--render_videos', action='store_true', help="Enable video rendering")
     parser.add_argument('--video_path', type=str, default='videos', help="Directory to save rendered videos")
-    parser.add_argument('--video_fps', type=int, default=10, help="Frames per second for the video")
+    parser.add_argument('--video_fps', type=int, default=30, help="Frames per second for the video")
     parser.add_argument('--video_dim', type=int, nargs=2, default=[256, 256], help="Dimensions for the rendered video (width height)")
     args = parser.parse_args()
 
