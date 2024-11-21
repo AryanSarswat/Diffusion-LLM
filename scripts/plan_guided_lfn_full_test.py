@@ -29,22 +29,9 @@ diffusion_experiment = utils.load_diffusion(
     epoch=args.diffusion_epoch, seed=args.seed,
 )
 
-""" dataset_config = utils.Config(
-    'datasets.MetaworldSequenceDataset',  # Use the custom dataset class
-    savepath=(args.savepath, 'dataset_config.pkl'),
-    env=args.dataset,
-    data_path=args.data_path,  # Path to your collected data
-    horizon=args.horizon,
-    normalizer=args.normalizer,
-    preprocess_fns=args.preprocess_fns,
-    use_padding=args.use_padding,
-    max_path_length=args.max_path_length,
-)
-
-dataset = dataset_config() """
 
 diffusion = diffusion_experiment.ema
-dataset = diffusion_experiment.dataset #Uncomment if using same env as during training
+dataset = diffusion_experiment.dataset
 renderer = diffusion_experiment.renderer
 
 
@@ -60,7 +47,7 @@ def predefined_loss_fn_(x, obs_dim,action_dim,normalizer):
     mean_speeds = torch.mean(speeds, dim=1)
 
     # Define loss as negative mean speed: shape [batch_size]
-    loss_per_trajectory = mean_speeds
+    loss_per_trajectory = - mean_speeds
 
     return loss_per_trajectory  # Shape: [batch_size]
 import torch.nn.functional as F
@@ -213,8 +200,8 @@ def predefined_loss_fn1(x, obs_dim, action_dim, normalizer,
 
 def predefined_loss_fn2(x, obs_dim, action_dim, normalizer, 
                                   wall_pos=[0.1, 0.6, 0.075], 
-                                  wall_half_size=[0.1, 0.01, 0.13], 
-                                  min_safe_dist=0.07, 
+                                  wall_half_size=[0.1, 0.01, 0.12], 
+                                  min_safe_dist=0.1, 
                                   delta_t=1.0, 
                                   return_penetration=False):
     """
@@ -279,7 +266,7 @@ def predefined_loss_fn2(x, obs_dim, action_dim, normalizer,
 
     # Calculate penalties where the hand is too close to the wall
     penalties = torch.relu(-safe_distances) ** 2  # [batch_size, horizon, 3]
-    scaled_p=penalties
+    scaled_p=penalties*10
 
     # Sum penalties across dimensions to get total penalty per timestep
     total_penetration = scaled_p.sum(dim=-1)  # [batch_size, horizon]
@@ -293,6 +280,11 @@ def predefined_loss_fn2(x, obs_dim, action_dim, normalizer,
     
     # Compute mean penalty per trajectory
     loss = total_penetration.mean(dim=1)  # [batch_size]
+    """ action_magnitudes = torch.norm(actions, dim=-1)  # [batch_size, horizon]
+    speed_penalty = -0.4 * action_magnitudes.mean(dim=1)  # [batch_size] """
+    
+    # Combine penalties
+    final_loss = loss #+ speed_penalty
 
 
     if return_penetration:
@@ -303,9 +295,9 @@ def predefined_loss_fn2(x, obs_dim, action_dim, normalizer,
             'mean_penetration': torch.sqrt(total_penetration).mean().item() if (total_penetration > 0).any() else 0.0
         }
         print("Penetration Info:", penetration_info)
-        return loss, penetration_info
+        return final_loss, penetration_info
 
-    return loss
+    return final_loss
 
 
 def _loss_fn (x, obs_dim,action_dim,normalizer ):
@@ -364,9 +356,9 @@ policy = policy_config()
 #-----------------------------------------------------------------------------#
 
 import metaworld
-mt = metaworld.ML1(args.dataset)
+mt = metaworld.MT1(args.dataset)
 env = mt.train_classes[args.dataset]()
-tasks = mt.test_tasks
+tasks = mt.train_tasks
 success_r=[]
 for i,task in enumerate(tasks):
     env.set_task(task)
@@ -441,7 +433,7 @@ for i,task in enumerate(tasks):
     success_r.append(success)
 
     if args.render_videos:
-        video_file = os.path.join("videos/guided_test1_spatial", f'trajectory_guided_spatial{i}_{args.dataset}_{args.horizon}.mp4')
+        video_file = os.path.join("videos/guided_test3_button_spatial", f'trajectory_guided_spatial{i}_{args.dataset}_{args.horizon}.mp4')
         imageio.mimwrite(video_file, frames, fps=30)
         print(f"Saved video to {video_file}")
         trajectory_data = {
@@ -454,7 +446,7 @@ for i,task in enumerate(tasks):
         }
 
         # Append to a main JSON file for all trajectories
-        json_file = "videos/guided_test1_spatial/all_trajectory_data.json"
+        json_file = "videos/guided_test3_button_spatial/all_trajectory_data.json"
         try:
             # Load existing data if file exists, otherwise initialize empty list
             if os.path.exists(json_file):
@@ -474,7 +466,7 @@ for i,task in enumerate(tasks):
             print(f"Failed to save trajectory data: {e}")
 
 overall_success_rate = (sum(success_r) / len(tasks)) * 100
-with open("videos/guided_test1_spatial/res.txt", 'w') as f:
+with open("videos/guided_test3_button_spatial/res.txt", 'w') as f:
     f.write(f"Overall Success Rate: {overall_success_rate}%\n")
 print(f"Overall Success Rate: {overall_success_rate}%")
 ## Write results to json file at `args.savepath`

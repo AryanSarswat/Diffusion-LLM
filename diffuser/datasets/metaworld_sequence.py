@@ -43,7 +43,14 @@ class MetaworldSequenceDataset(SequenceDataset):
             fields.add_path(episode)
         fields.finalize()
 
-        self.normalizer = DatasetNormalizer(fields, normalizer, path_lengths=fields['path_lengths'])
+        # Check if the provided normalizer is already an instance of DatasetNormalizer
+        if isinstance(normalizer, DatasetNormalizer):
+            # Use the provided normalizer directly (e.g., from the training dataset)
+            self.normalizer = normalizer
+        else:
+            # Otherwise, create a new normalizer based on the type string
+            self.normalizer = DatasetNormalizer(fields, normalizer, path_lengths=fields['path_lengths'])
+
         self.indices = self.make_indices(fields.path_lengths, horizon)
 
         self.observation_dim = fields.observations.shape[-1]
