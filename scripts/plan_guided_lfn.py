@@ -7,6 +7,7 @@ import imageio
 import os
 import torch
 import numpy as np
+from tqdm import tqdm
 
 #-----------------------------------------------------------------------------#
 #----------------------------------- setup -----------------------------------#
@@ -24,7 +25,7 @@ args = Parser().parse_args('plan')
 
 ## Load diffusion model from disk
 diffusion_experiment = utils.load_diffusion(
-    args.loadbase, args.dataset, args.diffusion_loadpath,
+    args.diffusion_loadpath,
     epoch=args.diffusion_epoch, seed=args.seed,
 )
 
@@ -296,6 +297,7 @@ def predefined_loss_fn2(x, obs_dim, action_dim, normalizer,
     return loss
 
 
+
 def _loss_fn (x, obs_dim,action_dim,normalizer ):
     actions = x[:, :, :action_dim]
     actions = actions * torch.tensor(normalizer.normalizers['actions'].stds, device=x.device) + torch.tensor(normalizer.normalizers['actions'].means, device=x.device)
@@ -315,8 +317,105 @@ def _loss_fn (x, obs_dim,action_dim,normalizer ):
 
     return loss_per_trajectory  # Shape: [batch_size]
 
+def pick_place_wall_loss_fn(x, obs_dim, action_dim, normalizer,
+                          wall_pos=[0.1, 0.75, .06],  # Wall midpoint from environment
+                          wall_dims=[0.12, 0.01, 0.06],  # Approximate wall dimensions
+                          min_safe_dist=0.3,
+                          delta_t=1.0,
+                          return_diagnostics=False):
+    """
+    Loss function for pick-place task with wall obstacle avoidance.
+    Penalizes:
+    1. Trajectories that come too close to the wall
+    2. Trajectories that don't successfully grasp the object
+    3. Trajectories that don't move the object to the target
+    
+    Args:
+        x (torch.Tensor): Input tensor of shape [batch_size, horizon, transition_dim]
+        obs_dim (int): Observation dimension offset in x
+        action_dim (int): Action dimension in x
+        normalizer (object): Normalizer with means and stds for actions/observations
+        wall_pos (list): Center position of the wall [x, y, z]
+        wall_dims (list): Full dimensions of the wall [width, thickness, height]
+        min_safe_dist (float): Minimum safe distance from wall
+        delta_t (float): Time step for action integration
+        return_diagnostics (bool): Whether to return detailed diagnostic information
+    
+    Returns:
+        torch.Tensor: Combined loss of shape [batch_size]
+        (Optional) dict: Diagnostic information if return_diagnostics is True
+    """
+    import torch
+    
+    # Convert parameters to tensors
+    wall_pos = torch.tensor(wall_pos, device=x.device, dtype=x.dtype).view(1, 1, 3)
+    wall_half_size = torch.tensor(wall_dims, device=x.device, dtype=x.dtype).view(1, 1, 3) / 2
+
+    # Split and unnormalize actions and observations
+    actions = x[:, :, :action_dim]
+    obs = x[:, :, action_dim:]
+
+    # Unnormalize
+    action_stds = torch.from_numpy(normalizer.normalizers['actions'].stds).to(x.device).to(x.dtype).view(1, 1, -1)
+    action_means = torch.from_numpy(normalizer.normalizers['actions'].means).to(x.device).to(x.dtype).view(1, 1, -1)
+    actions = actions * action_stds + action_means
+
+    obs_stds = torch.from_numpy(normalizer.normalizers['observations'].stds).to(x.device).to(x.dtype).view(1, 1, -1)
+    obs_means = torch.from_numpy(normalizer.normalizers['observations'].means).to(x.device).to(x.dtype).view(1, 1, -1)
+    obs = obs * obs_stds + obs_means
+
+    # Extract relevant positions from observations
+    hand_pos = obs[:, :, :3]  # [batch_size, horizon, 3]
+    gripper_state = obs[:, :, 3:4]  # [batch_size, horizon, 1]
+    obj_pos = obs[:, :, 4:7]  # [batch_size, horizon, 3]
+    target_pos = obs[:, :, -3:]  # [batch_size, horizon, 3]
+
+    # 1. Wall avoidance loss
+    distances_to_wall = torch.abs(hand_pos - wall_pos) - wall_half_size
+    safe_distances = distances_to_wall - min_safe_dist
+    wall_penalties = torch.relu(-safe_distances) ** 2
+    wall_loss = wall_penalties.sum(dim=-1).mean(dim=1)  # [batch_size]
+
+    # 2. Grasping loss
+    hand_to_obj = torch.norm(hand_pos - obj_pos, dim=-1)  # [batch_size, horizon]
+    grasp_dist_loss = torch.exp(-5.0 * hand_to_obj) * gripper_state.squeeze(-1)
+    grasp_loss = grasp_dist_loss.mean(dim=1)  # [batch_size]
+
+    # 3. Target reaching loss
+    obj_to_target = torch.norm(obj_pos - target_pos, dim=-1)  # [batch_size, horizon]
+    target_loss = obj_to_target.mean(dim=1)  # [batch_size]
+
+    # 4. Smooth motion loss
+    action_diff = actions[:, 1:] - actions[:, :-1]
+    smoothness_loss = torch.norm(action_diff, dim=-1).mean(dim=1)  # [batch_size]
+
+    # Combine losses with weights
+    total_loss = (
+        15.0 * wall_loss +      # Strongly avoid wall collisions
+        1.0 * grasp_loss +     # Encourage grasping
+        1.5 * target_loss +    # Prioritize reaching target
+        1 * smoothness_loss  # Slight preference for smooth motion
+    )
+
+    if return_diagnostics:
+        diagnostics = {
+            'wall_loss': wall_loss.mean().item(),
+            'grasp_loss': grasp_loss.mean().item(),
+            'target_loss': target_loss.mean().item(),
+            'smoothness_loss': smoothness_loss.mean().item(),
+            'total_loss': total_loss.mean().item(),
+            'num_wall_violations': (wall_penalties.sum(-1) > 0).float().sum().item(),
+            'max_wall_penetration': wall_penalties.max().item(),
+            'min_obj_target_dist': obj_to_target.min().item(),
+            'min_hand_obj_dist': hand_to_obj.min().item()
+        }
+        return total_loss, diagnostics
+
+    return total_loss
+
+
 ## Initialize custom guide with your loss function
-guide = CustomGuide(loss_fn=predefined_loss_fn2, model=diffusion,normalizer=dataset.normalizer)
+guide = CustomGuide(loss_fn=pick_place_wall_loss_fn, model=diffusion,normalizer=dataset.normalizer)
 
 logger_config = utils.Config(
     utils.Logger,
@@ -351,113 +450,109 @@ policy = policy_config()
 #--------------------------------- main loop ---------------------------------#
 #-----------------------------------------------------------------------------#
 
-env = dataset.env
-observation = env.reset()
+import metaworld
 
+for i in range(15):
+    mt = metaworld.MT1(args.dataset)
+    env = mt.train_classes[args.dataset]()
+    # breakpoint()
+    tasks = mt.train_tasks
+    env.set_task(tasks[0])
 
-## Observations for rendering
-rollout = [observation.copy()]
+    observation = env.reset()
 
-total_reward = 0
-frames = []
-speed_list = []
-pos_list = []
-d_list={}
-done=False
-for t in range(args.max_episode_length):
+    ## Observations for rendering
+    rollout = [observation.copy()]
 
-    if t % 10 == 0: print(args.savepath, flush=True)
+    total_reward = 0
+    frames = []
+    speed_list = []
+    pos_list = []
+    d_list={}
+    done=False
+    for t in tqdm(range(args.max_episode_length)):
 
-    ## Save state for rendering only
-    #state = env.state_vector().copy()
+        if t % 10 == 0: print(args.savepath, flush=True)
 
-    ## Format current observation and goal for conditioning
-    conditions = {0: observation}
+        ## Save state for rendering only
+        #state = env.state_vector().copy()
 
-    action, samples = policy(conditions, batch_size=args.batch_size, verbose=args.verbose)
+        ## Format current observation and goal for conditioning
+        conditions = {0: observation}
 
-    
-    ## Execute action in environment
-    action[:-1] = np.clip(action[:-1], env.action_space.low[:-1], env.action_space.high[:-1])
-    next_observation, reward, terminal, info = env.step(action)
+        action, samples = policy(conditions, batch_size=args.batch_size, verbose=args.verbose)
 
-    ###########
-    wall_body_pos = torch.tensor([0.1, 0.6, 0.0], device='cuda')  # [0.1, 0.6, 0]
-    wall_size = torch.tensor([0.1, 0.01, 0.075], device='cuda')  # from wall.xml
+        ## Execute action in environment
+        action[:-1] = np.clip(action[:-1], env.action_space.low[:-1], env.action_space.high[:-1])
+        next_observation, reward, terminal, info = env.step(action)
 
-    min_safe_dist=0.3
-    current_positions = torch.tensor(observation[:3],device='cuda')
-    actions=torch.tensor(action[:-1],device='cuda')
-    predicted_positions = current_positions + actions
-    
-    # Calculate distances to wall SURFACES (not center)
-    dx = torch.abs(predicted_positions[..., 0] - wall_body_pos[0]) - wall_size[0]
-    dy = torch.abs(predicted_positions[..., 1] - wall_body_pos[1]) - wall_size[1]
-    dz = torch.abs(predicted_positions[..., 2] - wall_body_pos[2]) - wall_size[2]
-    
-    # Check violations (negative distance means we're inside the wall)
-    x_violation = dx < min_safe_dist
-    y_violation = dy < min_safe_dist
-    z_violation = dz < min_safe_dist
-    
-    # Position violates if within bounds in all dimensions
-    in_violation = x_violation & y_violation & z_violation
-    
-    # Calculate penetration (how much we're violating the safe distance)
-    x_pen = torch.relu(min_safe_dist - dx)
-    y_pen = torch.relu(min_safe_dist - dy)
-    z_pen = torch.relu(min_safe_dist - dz)
-    
-    penetration = torch.where(
-        in_violation,
-        x_pen**2 + y_pen**2 + z_pen**2,
-        torch.zeros_like(dx)
-    )
-    print("DISTANCE TO WALL: ",torch.sqrt(penetration), "  Hand POS: ",current_positions)
-    ###########
-    done = int(info.get('success', False)) == 1
+        ###########
+        wall_body_pos = torch.tensor([0.1, 0.75, .06], device='cuda')  # [0.1, 0.6, 0]
+        wall_size = torch.tensor([0.12, 0.01, 0.06], device='cuda')  # from wall.xml
 
-    action = torch.tensor(action) if isinstance(action, np.ndarray) else action
-    speed = torch.linalg.norm(action).item()
+        min_safe_dist=0.3
+        current_positions = torch.tensor(observation[:3],device='cuda')
+        actions=torch.tensor(action[:-1],device='cuda')
+        predicted_positions = current_positions + actions
+        
+        # Calculate distances to wall SURFACES (not center)
+        dx = torch.abs(predicted_positions[..., 0] - wall_body_pos[0]) - wall_size[0]
+        dy = torch.abs(predicted_positions[..., 1] - wall_body_pos[1]) - wall_size[1]
+        dz = torch.abs(predicted_positions[..., 2] - wall_body_pos[2]) - wall_size[2]
+        
+        # Check violations (negative distance means we're inside the wall)
+        x_violation = dx < min_safe_dist
+        y_violation = dy < min_safe_dist
+        z_violation = dz < min_safe_dist
+        
+        # Position violates if within bounds in all dimensions
+        in_violation = x_violation & y_violation & z_violation
+        
+        # Calculate penetration (how much we're violating the safe distance)
+        x_pen = torch.relu(min_safe_dist - dx)
+        y_pen = torch.relu(min_safe_dist - dy)
+        z_pen = torch.relu(min_safe_dist - dz)
+        
+        penetration = torch.where(
+            in_violation,
+            x_pen**2 + y_pen**2 + z_pen**2,
+            torch.zeros_like(dx)
+        )
+        print("DISTANCE TO WALL: ",torch.sqrt(penetration), "  Hand POS: ",current_positions)
+        ###########
+        done = int(info.get('success', False)) == 1
 
-    speed_list.append(speed)
-    pos_list.append(observation[:3])
-    d_list[t]={'dx':x_violation,'dy':y_violation,'dz':z_violation}
-    ## Print reward and score
-    total_reward += reward
-    #score = env.get_normalized_score(total_reward)
-    print(
-        f't: {t} | r: {reward:.2f} | R: {total_reward:.2f} | '
-        f'values: {samples.values} | scale: {args.scale}',
-        flush=True,
-    )
+        action = torch.tensor(action) if isinstance(action, np.ndarray) else action
+        speed = torch.linalg.norm(action).item()
+
+        speed_list.append(speed)
+        pos_list.append(observation[:3])
+        d_list[t]={'dx':x_violation,'dy':y_violation,'dz':z_violation}
+        ## Print reward and score
+        total_reward += reward
+        #score = env.get_normalized_score(total_reward)
+        print(
+            f't: {t} | r: {reward:.2f} | R: {total_reward:.2f} | '
+            f'values: {samples.values} | scale: {args.scale}',
+            flush=True,
+        )
+
+        if args.render_videos:
+            img = env.render(offscreen=True)
+            frames.append(img)
+
+        ## Update rollout observations
+        rollout.append(next_observation.copy())
+
+        ## Render every `args.vis_freq` steps
+        #logger.log(t, samples, state, rollout)
+
+        if done:
+            break
+
+        observation = next_observation
 
     if args.render_videos:
-        img = env.render(offscreen=True)
-        frames.append(img)
-
-    ## Update rollout observations
-    rollout.append(next_observation.copy())
-
-    ## Render every `args.vis_freq` steps
-    #logger.log(t, samples, state, rollout)
-
-    if done:
-        break
-
-    observation = next_observation
-
-if args.render_videos:
-    video_file = os.path.join("videos", f'trajectory_guided_spatial_{args.dataset}_{args.horizon}_uniform4.mp4')
-    imageio.mimwrite(video_file, frames, fps=30)
-    print(f"Saved video to {video_file}")
-    text_file = os.path.join("videos", f'speed_guided_spatial_{args.dataset}_{args.horizon}_uniform.txt')
-    try:
-        with open(text_file, 'w') as f:
-            for step, speed in enumerate(speed_list):
-                f.write(f"Step {step}: Speed {speed:.2f} Hand_pos {pos_list[step]} Viol {d_list[step]}\n")
-        print(f"Saved speed data to {text_file}")
-    except IOError as e:
-        print(f"Failed to save speed data: {e}")
-## Write results to json file at `args.savepath`
-#logger.finish(t, score, total_reward, terminal, diffusion_experiment, None)  # No value_experiment
+        video_file = os.path.join("videos/pick-place-v2/", f'trajectory_{i}_guided_spatial_{args.dataset}_{args.horizon}.mp4')
+        imageio.mimwrite(video_file, frames, fps=30)
+        print(f"Saved video to {video_file}")

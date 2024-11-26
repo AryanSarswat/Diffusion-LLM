@@ -7,6 +7,7 @@ import os
 import torch
 import numpy as np
 import json
+from tqdm import tqdm
 
 #-----------------------------------------------------------------------------#
 #----------------------------------- setup -----------------------------------#
@@ -23,8 +24,7 @@ args = Parser().parse_args('plan')
 #-----------------------------------------------------------------------------#
 
 ## load only the diffusion model from disk
-diffusion_experiment = utils.load_diffusion(
-    args.loadbase, args.dataset, args.diffusion_loadpath,
+diffusion_experiment = utils.load_diffusion(args.diffusion_loadpath,
     epoch=args.diffusion_epoch, seed=args.seed,
 )
 
@@ -75,7 +75,7 @@ for i,task in enumerate(tasks):
     speed_list = []
     pos_list = []
     success = 0
-    for t in range(args.max_episode_length):
+    for t in tqdm(range(args.max_episode_length)):
 
         if t % 10 == 0: print(args.savepath, flush=True)
 
@@ -124,7 +124,7 @@ for i,task in enumerate(tasks):
     
     success_r.append(success)
     if args.render_videos:
-        video_file = os.path.join("videos/test3_button_unguided_wall", f'trajectory_{i}_{args.dataset}_{args.horizon}.mp4')
+        video_file = os.path.join("videos/pick-place-v2", f'trajectory_{i}_{args.dataset}_{args.horizon}.mp4')
         imageio.mimwrite(video_file, frames, fps=30)
         print(f"Saved video to {video_file}")
         trajectory_data = {
@@ -137,7 +137,7 @@ for i,task in enumerate(tasks):
         }
 
         # Append to a main JSON file for all trajectories
-        json_file = "videos/test3_button_unguided_wall/all_trajectory_data.json"
+        json_file = "videos/pick-place-v2/all_trajectory_data.json"
         try:
             # Load existing data if file exists, otherwise initialize empty list
             if os.path.exists(json_file):
@@ -157,7 +157,7 @@ for i,task in enumerate(tasks):
             print(f"Failed to save trajectory data: {e}")
 
 overall_success_rate = (sum(success_r) / len(tasks)) * 100
-with open("videos/test3_button_unguided_wall/res.txt", 'w') as f:
+with open("videos/pick-place-v2/res.txt", 'w') as f:
     f.write(f"Overall Success Rate: {overall_success_rate}%\n")
 print(f"Overall Success Rate: {overall_success_rate}%")
 ## write results to json file at `args.savepath`
