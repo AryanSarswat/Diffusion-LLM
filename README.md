@@ -105,12 +105,12 @@ Be sure to add parameters you want to change for each task if required
 
 #Using Loss function for guidance
 ```
-python scripts/plan_guided_lfn.py  --dataset drawer-close-v2 --diffusion_loadpath /home/kurt/HRI/diffuser/logs/drawer-close-v2/diffusion/metaworld_H8_T20 --horizon 8 --descending False
+python scripts/plan_guided_lfn.py  --dataset pick-place-wall-v2 --diffusion_loadpath logs/pick-place-v2/diffusion/metaworld_H8_T250 --horizon 8 --descending False
 ```
 Where "descending" controls how the loss values are ordered to pick the first trajectory.
 #Without any guidance
 ```
-python scripts/plan_unguided.py --dataset drawer-close-v2  --diffusion_loadpath /home/kurt/HRI/diffuser/logs/drawer-close-v2/diffusion/metaworld_H8_T20 --horizon 8
+python scripts/plan_unguided.py --dataset pick-place-wall-v2 --diffusion_loadpath logs/pick-place-v2/diffusion/metaworld_H8_T250 --horizon 8
 ```
 See [locomotion:plans](config/locomotion.py#L110-L149) for the corresponding default hyperparameters.
 
