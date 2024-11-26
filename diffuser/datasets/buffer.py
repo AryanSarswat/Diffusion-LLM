@@ -59,7 +59,7 @@ class ReplayBuffer:
         dim = array.shape[-1]
         shape = (self.max_n_episodes, self.max_path_length, dim)
         self._dict[key] = np.zeros(shape, dtype=np.float32)
-        # print(f'[ utils/mujoco ] Allocated {key} with size {shape}')
+        print(f'[ utils/mujoco ] Allocated {key} with size {shape}')
 
     def add_path(self, path):
         path_length = len(path['observations'])

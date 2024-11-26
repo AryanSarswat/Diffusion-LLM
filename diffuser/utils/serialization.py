@@ -22,8 +22,11 @@ def get_latest_epoch(loadpath):
     states = glob.glob1(os.path.join(*loadpath), 'state_*')
     latest_epoch = -1
     for state in states:
-        epoch = int(state.replace('state_', '').replace('.pt', ''))
-        latest_epoch = max(epoch, latest_epoch)
+        try:
+            epoch = int(state.replace('state_', '').replace('.pt', ''))
+            latest_epoch = max(epoch, latest_epoch)
+        except ValueError:
+            continue
     return latest_epoch
 
 def load_config(*loadpath):
@@ -34,6 +37,7 @@ def load_config(*loadpath):
     return config
 
 def load_diffusion(*loadpath, epoch='latest', device='cuda:0', seed=None):
+    print(loadpath)
     dataset_config = load_config(*loadpath, 'dataset_config.pkl')
     render_config = load_config(*loadpath, 'render_config.pkl')
     model_config = load_config(*loadpath, 'model_config.pkl')

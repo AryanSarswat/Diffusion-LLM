@@ -16,9 +16,9 @@ class MetaworldSequenceDataset(SequenceDataset):
                  normalizer='LimitsNormalizer', preprocess_fns=[], max_path_length=1000,
                  max_n_episodes=10000, termination_penalty=0, use_padding=True, seed=None):
         self.preprocess_fn = get_preprocess_fn(preprocess_fns, env)
-        mt = metaworld.ML1(env)
+        mt = metaworld.MT1(env)
         env = mt.train_classes[env]()
-        task = random.choice(mt.test_tasks)
+        task = random.choice(mt.train_tasks)
         env.set_task(task)
         self.env = env
         self.horizon = horizon
