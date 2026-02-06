@@ -1,145 +1,265 @@
-# Planning with Diffusion &nbsp;&nbsp; [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1YajKhu-CUIGBJeQPehjVPJcK_b38a8Nc?usp=sharing)
+# Zero-Shot Adaptation for Guided Robot Policies
 
+**Aryan Sarswat, Dhruv Patel, Kushal Shah, Woo Chul Shin** | Georgia Institute of Technology
 
-Training and visualizing of diffusion models from [Planning with Diffusion for Flexible Behavior Synthesis](https://diffusion-planning.github.io/).
+This project combines diffusion-based trajectory planners with large language models (LLMs) to enable real-time, zero-shot robot policy adaptation. Given a natural language description of a new task constraint (e.g., "avoid the wall" or "move faster"), an LLM generates a differentiable loss function that guides the diffusion model's sampling process—adapting robot behavior at test time without any retraining.
 
-The [main branch](https://github.com/jannerm/diffuser/tree/main) contains code for training diffusion models and planning via value-function guided sampling on the D4RL locomotion environments.
-The [kuka branch](https://github.com/jannerm/diffuser/tree/kuka) contains block-stacking experiments.
-The [maze2d branch](https://github.com/jannerm/diffuser/tree/maze2d) contains goal-reaching via inpainting in the Maze2D environments.
+Built on top of [Diffuser](https://github.com/jannerm/diffuser) (Janner et al., ICML 2022), extended with [MetaWorld](https://meta-world.github.io/) manipulation task support and LLM-guided adaptation.
 
-<p align="center">
-    <img src="https://diffusion-planning.github.io/images/diffuser-card.png" width="60%" title="Diffuser model">
-</p>
+---
 
-**Updates**
-- 12/09/2022: Diffuser (the RL model) has been integrated into 🤗 Diffusers (the Hugging Face diffusion model library)! See [these docs](https://huggingface.co/docs/diffusers/using-diffusers/rl) for how to run Diffuser using their pipeline.
-- 10/17/2022: A bug in the value function scaling has been fixed in [this commit](https://github.com/jannerm/diffuser/commit/3d7361c2d028473b601cc04f5eecd019e14eb4eb). Thanks to [Philemon Brakel](https://scholar.google.com/citations?user=Q6UMpRYAAAAJ&hl=en) for catching it!
+## Approach
 
-## Quickstart
+```
+                          Natural Language Instruction
+                                    |
+                                    v
+                      +----------------------------+
+                      |   LLM (GPT-4o / Claude)    |
+                      |   Generates differentiable  |
+                      |   loss function in PyTorch   |
+                      +----------------------------+
+                                    |
+                          Loss function L(trajectory)
+                                    |
+                                    v
++----------------+    +----------------------------+    +----------------+
+| Demonstration  |--->| Diffusion Trajectory       |--->| Adapted        |
+| Data (MetaWorld)|   | Planner (Temporal U-Net)   |    | Trajectory     |
++----------------+    | + Loss-Guided Sampling     |    +----------------+
+                      +----------------------------+
+                                    |
+                                    v
+                          Robot executes adapted
+                          trajectory in MetaWorld
+```
 
-Load a pretrained diffusion model and sample from it in your browser with [scripts/diffuser-sample.ipynb](https://colab.research.google.com/drive/1YajKhu-CUIGBJeQPehjVPJcK_b38a8Nc?usp=sharing).
+**Pipeline:**
+1. **Train** a diffusion model on expert demonstrations for a base MetaWorld task (e.g., pick-and-place, door-close)
+2. **Describe** a new constraint or adaptation in natural language (e.g., "avoid the wall at position [0.1, 0.75, 0.06]")
+3. **Generate** a differentiable PyTorch loss function from the description using an LLM
+4. **Guide** the diffusion model's reverse sampling process using gradients of the generated loss
+5. **Execute** the adapted trajectory zero-shot in MetaWorld
 
+---
+
+## Key Results
+
+### Spatial Constraints
+
+| Task | Guidance | Success Rate ± Std Dev |
+|------|----------|------------------------|
+| Button Press | No guidance (baseline) | 1.00 ± 0.00 |
+| Button Press w/ Wall | No guidance | 0.53 ± 0.11 |
+| Button Press w/ Wall | Wall Penalization + Goal Incentive | **0.63 ± 0.10** |
+| Button Press w/ Wall | Wall Penalization | 0.26 ± 0.08 |
+| Pick and Place | No guidance (baseline) | 0.80 ± 0.07 |
+| Pick and Place w/ Wall | No guidance | 0.40 ± 0.03 |
+| Pick and Place w/ Wall | **Wall Penalization** | **0.80 ± 0.02** |
+
+**Key findings:**
+- **Pick-and-Place with Wall:** Loss-guided diffusion achieves **+40% absolute improvement** in success rate by generating spatial constraint loss functions that avoid obstacles
+- **Button Press with Wall:** Combining wall avoidance with goal incentive losses improves success rate by **+10%** over unguided baseline with wall
+
+### Speed Constraints
+
+| Speed | Success Rate | Overall Average Speed |
+|-------|--------------|----------------------|
+| Unguided (baseline) | 1.0 | 1.635 |
+| Slower | 0.9 | 1.352 |
+| Faster | 1.0 | 1.643 |
+
+The system successfully modifies trajectory speed on the door-close task while maintaining high task success, demonstrating behavioral adaptation without retraining.
+
+---
+
+## Project Structure
+
+```
+.
+├── config/
+│   └── locomotion.py          # Hyperparameters for all tasks
+├── diffuser/
+│   ├── datasets/
+│   │   ├── metaworld_sequence.py  # MetaWorld dataset loader
+│   │   ├── sequence.py        # D4RL dataset loader
+│   │   └── ...
+│   ├── models/
+│   │   ├── diffusion.py       # Gaussian diffusion model
+│   │   ├── temporal.py        # Temporal U-Net architecture
+│   │   └── ...
+│   ├── sampling/
+│   │   ├── functions.py       # Loss-guided sampling step
+│   │   ├── guides.py          # CustomGuide (loss-fn guidance)
+│   │   ├── policies.py        # GuidedPolicy, UnguidedPolicy
+│   │   └── ...
+│   └── utils/
+│       └── ...
+├── scripts/
+│   ├── train_metaworld.py     # Train diffusion model
+│   ├── plan_guided_lfn.py     # Run with loss-function guidance
+│   ├── plan_unguided.py       # Run without guidance (baseline)
+│   └── ...
+├── collect_metaworld.py       # Collect expert demonstrations
+├── environment.yml            # Conda environment specification
+└── setup.py
+```
+
+---
 
 ## Installation
 
-```
+### Prerequisites
+- CUDA-capable GPU (NVIDIA)
+- Conda package manager
+- MuJoCo 2.0 with valid license
+
+### Setup
+
+```bash
 conda env create -f environment.yml
 conda activate diffuser
 pip install -e .
 ```
 
-## Using pretrained models
+---
 
-### Downloading weights
+## Usage
 
+### 1. Collect Training Data
 
+Collect expert demonstrations from MetaWorld tasks using scripted policies:
 
-<details>
-<summary>To create the table of offline RL results from the paper, run <code>python plotting/table.py</code>. This will print a table that can be copied into a Latex document. (Expand to view table source.)</summary>
-
-```
-\definecolor{tblue}{HTML}{1F77B4}
-\definecolor{tred}{HTML}{FF6961}
-\definecolor{tgreen}{HTML}{429E9D}
-\definecolor{thighlight}{HTML}{000000}
-\newcolumntype{P}{>{\raggedleft\arraybackslash}X}
-\begin{table*}[hb!]
-\centering
-\small
-\begin{tabularx}{\textwidth}{llPPPPPPPPr}
-\toprule
-\multicolumn{1}{r}{\bf \color{black} Dataset} & \multicolumn{1}{r}{\bf \color{black} Environment} & \multicolumn{1}{r}{\bf \color{black} BC} & \multicolumn{1}{r}{\bf \color{black} CQL} & \multicolumn{1}{r}{\bf \color{black} IQL} & \multicolumn{1}{r}{\bf \color{black} DT} & \multicolumn{1}{r}{\bf \color{black} TT} & \multicolumn{1}{r}{\bf \color{black} MOPO} & \multicolumn{1}{r}{\bf \color{black} MOReL} & \multicolumn{1}{r}{\bf \color{black} MBOP} & \multicolumn{1}{r}{\bf \color{black} Diffuser} \\ 
-\midrule
-Medium-Expert & HalfCheetah & $55.2$ & $91.6$ & $86.7$ & $86.8$ & $95.0$ & $63.3$ & $53.3$ & $\textbf{\color{thighlight}105.9}$ & $88.9$ \scriptsize{\raisebox{1pt}{$\pm 0.3$}} \\ 
-Medium-Expert & Hopper & $52.5$ & $\textbf{\color{thighlight}105.4}$ & $91.5$ & $\textbf{\color{thighlight}107.6}$ & $\textbf{\color{thighlight}110.0}$ & $23.7$ & $\textbf{\color{thighlight}108.7}$ & $55.1$ & $103.3$ \scriptsize{\raisebox{1pt}{$\pm 1.3$}} \\ 
-Medium-Expert & Walker2d & $\textbf{\color{thighlight}107.5}$ & $\textbf{\color{thighlight}108.8}$ & $\textbf{\color{thighlight}109.6}$ & $\textbf{\color{thighlight}108.1}$ & $101.9$ & $44.6$ & $95.6$ & $70.2$ & $\textbf{\color{thighlight}106.9}$ \scriptsize{\raisebox{1pt}{$\pm 0.2$}} \\ 
-\midrule
-Medium & HalfCheetah & $42.6$ & $44.0$ & $\textbf{\color{thighlight}47.4}$ & $42.6$ & $\textbf{\color{thighlight}46.9}$ & $42.3$ & $42.1$ & $44.6$ & $42.8$ \scriptsize{\raisebox{1pt}{$\pm 0.3$}} \\ 
-Medium & Hopper & $52.9$ & $58.5$ & $66.3$ & $67.6$ & $61.1$ & $28.0$ & $\textbf{\color{thighlight}95.4}$ & $48.8$ & $74.3$ \scriptsize{\raisebox{1pt}{$\pm 1.4$}} \\ 
-Medium & Walker2d & $75.3$ & $72.5$ & $\textbf{\color{thighlight}78.3}$ & $74.0$ & $\textbf{\color{thighlight}79.0}$ & $17.8$ & $\textbf{\color{thighlight}77.8}$ & $41.0$ & $\textbf{\color{thighlight}79.6}$ \scriptsize{\raisebox{1pt}{$\pm 0.55$}} \\ 
-\midrule
-Medium-Replay & HalfCheetah & $36.6$ & $45.5$ & $44.2$ & $36.6$ & $41.9$ & $\textbf{\color{thighlight}53.1}$ & $40.2$ & $42.3$ & $37.7$ \scriptsize{\raisebox{1pt}{$\pm 0.5$}} \\ 
-Medium-Replay & Hopper & $18.1$ & $\textbf{\color{thighlight}95.0}$ & $\textbf{\color{thighlight}94.7}$ & $82.7$ & $\textbf{\color{thighlight}91.5}$ & $67.5$ & $\textbf{\color{thighlight}93.6}$ & $12.4$ & $\textbf{\color{thighlight}93.6}$ \scriptsize{\raisebox{1pt}{$\pm 0.4$}} \\ 
-Medium-Replay & Walker2d & $26.0$ & $77.2$ & $73.9$ & $66.6$ & $\textbf{\color{thighlight}82.6}$ & $39.0$ & $49.8$ & $9.7$ & $70.6$ \scriptsize{\raisebox{1pt}{$\pm 1.6$}} \\ 
-\midrule
-\multicolumn{2}{c}{\bf Average} & 51.9 & \textbf{\color{thighlight}77.6} & \textbf{\color{thighlight}77.0} & 74.7 & \textbf{\color{thighlight}78.9} & 42.1 & 72.9 & 47.8 & \textbf{\color{thighlight}77.5} \hspace{.6cm} \\ 
-\bottomrule
-\end{tabularx}
-\vspace{-.0cm}
-\caption{
-}
-\label{table:locomotion}
-\end{table*}
-
+```bash
+python collect_metaworld.py \
+    --env_name pick-place-v2 \
+    --num_trajectories 150 \
+    --max_path_length 250 \
+    --save_path data/metaworld_pick_place_data.pkl
 ```
 
-![](https://github.com/diffusion-planning/diffusion-planning.github.io/blob/master/images/table.png)
-</details>
+### 2. Train a Diffusion Model
 
-### Planning
+Train the diffusion model on your collected demonstrations:
 
-To plan with guided sampling, run:
-```
-python scripts/plan_guided_lfn.py     --dataset button-press-wall-v2     --diffusion_loadpath /home/kurt/HRI/diffuser/logs/button-press-v2/diffusion/metaworld_H8_T20_noisy --horizon 8 --descending False '
-```
-Where "descending" controls how the loss values are ordered to pick the first trajectory.
-
-To run unguided:
-
-```
-python scripts/plan_unguided.py     --dataset button-press-v2     --diffusion_loadpath /home/kurt/HRI/diffuser/logs/button-press-v2/diffusion/metaworld_H8_T20_noisy --horizon 8
-```
-## Training from scratch
-
-1. Train a diffusion model with:
-```
-python scripts/train_metaworld.py --dataset button-press-v2 --data_path '/home/kurt/HRI/diffuser/metaworld_button_press_data_150_uniform_noisy.pkl' --val_data_path '/home/kurt/HRI/diffuser/metaworld_button_press_validation.pkl'
-```
-You can pass your dataset for training in "data_path" and you validation dataset on "val_data_path"
-
-The default hyperparameters are listed in [locomotion:diffusion](config/locomotion.py#L22-L65).
-You can override any of them with flags, eg, `--n_diffusion_steps 100`.
-Be sure to add parameters you want to change for each task if required
-
-2. Plan using your newly-trained models with the same command as in the pretrained planning section, simply replacing the logbase to point to your new models:
-
-#Using Loss function for guidance
-```
-python scripts/plan_guided_lfn.py  --dataset pick-place-wall-v2 --diffusion_loadpath logs/pick-place-v2/diffusion/metaworld_H8_T250 --horizon 8 --descending False
-```
-Where "descending" controls how the loss values are ordered to pick the first trajectory.
-#Without any guidance
-```
-python scripts/plan_unguided.py --dataset pick-place-wall-v2 --diffusion_loadpath logs/pick-place-v2/diffusion/metaworld_H8_T250 --horizon 8
-```
-See [locomotion:plans](config/locomotion.py#L110-L149) for the corresponding default hyperparameters.
-
-**Deferred f-strings.** Note that some planning script arguments, such as `--n_diffusion_steps` or `--discount`,
-do not actually change any logic during planning, but simply load a different model using a deferred f-string.
-For example, the following flags:
-```
----horizon 32 --n_diffusion_steps 20 --discount 0.997
---value_loadpath 'f:values/defaults_H{horizon}_T{n_diffusion_steps}_d{discount}'
-```
-will resolve to a value checkpoint path of `values/defaults_H32_T20_d0.997`. It is possible to
-change the horizon of the diffusion model after training (see [here](https://colab.research.google.com/drive/1YajKhu-CUIGBJeQPehjVPJcK_b38a8Nc?usp=sharing) for an example),
-but not for the value function.
-
-
-
-
-## Reference
-```
-@inproceedings{janner2022diffuser,
-  title = {Planning with Diffusion for Flexible Behavior Synthesis},
-  author = {Michael Janner and Yilun Du and Joshua B. Tenenbaum and Sergey Levine},
-  booktitle = {International Conference on Machine Learning},
-  year = {2022},
-}
+```bash
+python scripts/train_metaworld.py \
+    --dataset pick-place-v2 \
+    --data_path data/metaworld_pick_place_data.pkl \
+    --val_data_path data/metaworld_pick_place_val.pkl
 ```
 
+Default hyperparameters are in [`config/locomotion.py`](config/locomotion.py). Override with command-line flags:
+
+```bash
+python scripts/train_metaworld.py \
+    --dataset pick-place-v2 \
+    --data_path data/metaworld_pick_place_data.pkl \
+    --val_data_path data/metaworld_pick_place_val.pkl \
+    --n_diffusion_steps 250 \
+    --batch_size 512 \
+    --horizon 8 \
+    --attention True
+```
+
+Models are saved to `logs/<dataset>/diffusion/<config>/`.
+
+### 3. Run with Loss-Guided Diffusion
+
+Use LLM-generated loss functions to adapt behavior at test time:
+
+```bash
+python scripts/plan_guided_lfn.py \
+    --dataset pick-place-wall-v2 \
+    --diffusion_loadpath logs/pick-place-v2/diffusion/metaworld_H8_T250 \
+    --horizon 8 \
+    --descending False
+```
+
+The `--descending` flag controls trajectory ranking: `False` selects the trajectory with the lowest loss (default for constraint satisfaction), `True` selects the highest loss.
+
+### 4. Run Unguided Baseline
+
+Run the baseline diffusion model without guidance:
+
+```bash
+python scripts/plan_unguided.py \
+    --dataset pick-place-v2 \
+    --diffusion_loadpath logs/pick-place-v2/diffusion/metaworld_H8_T250 \
+    --horizon 8
+```
+
+---
+
+## How Loss-Guided Adaptation Works
+
+The core mechanism is implemented in [`diffuser/sampling/guides.py`](diffuser/sampling/guides.py) (`CustomGuide` class):
+
+1. A loss function `L(trajectory)` is provided—either hand-crafted or generated by an LLM
+2. During each reverse diffusion step, gradients of `L` with respect to the trajectory are computed
+3. These gradients nudge the sampled trajectory toward lower loss (e.g., away from walls, toward faster speeds)
+4. The `CustomGuide` class accepts loss functions as Python callables or as code strings, enabling dynamic LLM-generated functions via `exec()`
+
+The guided sampling step is implemented in [`diffuser/sampling/functions.py`](diffuser/sampling/functions.py) (`n_step_guided_p_sample` function), which applies the loss gradients during the reverse diffusion process.
+
+**Example loss function for wall avoidance:**
+
+```python
+def guidance_loss_fn(task_id, x0_pred, robot_state):
+    # x0_pred shape: (batch, horizon, action_dim)
+    # Extract end-effector positions (first 3 dims of observation)
+    positions = x0_pred[:, :, :3]
+
+    # Wall at position [0.1, 0.75, 0.06] with dimensions
+    wall_center = torch.tensor([0.1, 0.75, 0.06])
+    wall_half_extents = torch.tensor([0.05, 0.05, 0.15])
+
+    # Compute distance to wall and penalize penetration
+    distance = torch.abs(positions - wall_center) - wall_half_extents
+    penetration = torch.clamp(-distance, min=0.0)
+    loss = penetration.sum()
+
+    return loss
+```
+
+This loss function is provided to the `CustomGuide`, which computes gradients and applies them during sampling.
+
+---
+
+## Supported MetaWorld Tasks
+
+Task configurations are in [`config/locomotion.py`](config/locomotion.py):
+
+- **pick-place-v2** / **pick-place-wall-v2** — Pick up an object and place it at a target location (with/without wall obstacle)
+- **button-press-v2** / **button-press-wall-v2** — Press a button (with/without wall obstacle)
+- **drawer-close-v2** — Close a drawer
+- **door-open-v2** — Open a door
+- **reach-v2** — Reach to a target position
+- **push-v2** — Push an object to a goal location
+
+---
 
 ## Acknowledgements
 
-The diffusion model implementation is based on Phil Wang's [denoising-diffusion-pytorch](https://github.com/lucidrains/denoising-diffusion-pytorch) repo.
-The organization of this repo and remote launcher is based on the [trajectory-transformer](https://github.com/jannerm/trajectory-transformer) repo.
+This project builds on [Diffuser](https://github.com/jannerm/diffuser) by Michael Janner, Yilun Du, Joshua Tenenbaum, and Sergey Levine (ICML 2022). The diffusion model implementation is based on Phil Wang's [denoising-diffusion-pytorch](https://github.com/lucidrains/denoising-diffusion-pytorch). The repository organization is based on the [trajectory-transformer](https://github.com/jannerm/trajectory-transformer) repo.
+
+---
+
+## Citation
+
+If you use this code or build upon this work, please cite the original Diffuser paper:
+
+```bibtex
+@inproceedings{janner2022diffuser,
+  title     = {Planning with Diffusion for Flexible Behavior Synthesis},
+  author    = {Michael Janner and Yilun Du and Joshua B. Tenenbaum and Sergey Levine},
+  booktitle = {International Conference on Machine Learning},
+  year      = {2022},
+}
+```
+
+---
+
+## License
+
+MIT License. See [LICENSE](LICENSE) for details.

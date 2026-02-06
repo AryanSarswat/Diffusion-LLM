@@ -35,8 +35,8 @@ base = {
         ## dataset
         'loader': 'datasets.SequenceDataset',
         'normalizer': 'GaussianNormalizer',
-        'data_path': '/home/kurt/HRI/diffuser/metaworld_drawer_close_data_150_uniform.pkl',
-        'val_data_path': '/home/kurt/HRI/diffuser/metaworld_drawer_close_validation.pkl',
+        'data_path': 'data/metaworld_drawer_close_data.pkl',
+        'val_data_path': 'data/metaworld_drawer_close_validation.pkl',
         'preprocess_fns': [],
         'clip_denoised': False,
         'use_padding': True,
@@ -141,7 +141,7 @@ base = {
         ## loading
         'diffusion_loadpath': 'f:diffusion/defaults_H{horizon}_T{n_diffusion_steps}',
         'value_loadpath': 'f:values/defaults_H{horizon}_T{n_diffusion_steps}_d{discount}',
-        'data_path': '/home/kurt/HRI/diffuser/metaworld_drawer_close_data_150_uniform.pkl',
+        'data_path': 'data/metaworld_drawer_close_data.pkl',
 
         'diffusion_epoch': 'latest',
         'value_epoch': 'latest',
